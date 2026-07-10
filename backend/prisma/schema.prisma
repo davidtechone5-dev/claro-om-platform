@@ -1,0 +1,400 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @default(now()) @map("updated_at")
+  createdBy   String?          @map("created_by")
+  updatedBy   String?          @map("updated_by")
+  deletedAt   DateTime?        @map("deleted_at")
+
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @default(now()) @map("updated_at")
+  createdBy   String?          @map("created_by")
+  updatedBy   String?          @map("updated_by")
+  deletedAt   DateTime?        @map("deleted_at")
+
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id           String      @id @default(uuid())
+  email        String      @unique
+  passwordHash String      @map("password_hash")
+  fullName     String      @map("full_name")
+  roleId       String?     @map("role_id")
+  isActive     Boolean     @default(true) @map("is_active")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @default(now()) @map("updated_at")
+  createdBy    String?     @map("created_by")
+  updatedBy    String?     @map("updated_by")
+  deletedAt    DateTime?   @map("deleted_at")
+
+  role         Role?       @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  engineers             Engineer?
+  ticketAssignments     TicketAssignment[]
+  ticketHistory         TicketHistory[]
+  materialRequests      MaterialRequest[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+
+  @@map("users")
+}
+
+model State {
+  id          String      @id @default(uuid())
+  name        String      @unique
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @default(now()) @map("updated_at")
+  createdBy   String?     @map("created_by")
+  updatedBy   String?     @map("updated_by")
+  deletedAt   DateTime?   @map("deleted_at")
+
+  districts           District[]
+  engineers           Engineer[]
+  masterInstallations MasterInstallation[]
+
+  @@map("states")
+}
+
+model District {
+  id          String      @id @default(uuid())
+  stateId     String      @map("state_id")
+  name        String
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @default(now()) @map("updated_at")
+  createdBy   String?     @map("created_by")
+  updatedBy   String?     @map("updated_by")
+  deletedAt   DateTime?   @map("deleted_at")
+
+  state       State       @relation(fields: [stateId], references: [id], onDelete: Cascade)
+
+  engineers           Engineer[]
+  masterInstallations MasterInstallation[]
+
+  @@unique([stateId, name], name: "uq_state_district")
+  @@map("districts")
+}
+
+model Engineer {
+  id         String      @id @default(uuid())
+  userId     String?     @unique @map("user_id")
+  name       String
+  email      String      @unique
+  phone      String
+  stateId    String?     @map("state_id")
+  districtId String?     @map("district_id")
+  isActive   Boolean     @default(true) @map("is_active")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @default(now()) @map("updated_at")
+  createdBy  String?     @map("created_by")
+  updatedBy  String?     @map("updated_by")
+  deletedAt  DateTime?   @map("deleted_at")
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  state      State?      @relation(fields: [stateId], references: [id], onDelete: SetNull)
+  district   District?   @relation(fields: [districtId], references: [id], onDelete: SetNull)
+
+  ticketAssignments TicketAssignment[]
+  initialVisits     InitialVisit[]
+  materialRequests  MaterialRequest[]
+
+  @@map("engineers")
+}
+
+model MasterInstallation {
+  id               String      @id @default(uuid())
+  applicationId    String      @unique @map("application_id")
+  clientName       String      @map("client_name")
+  installationDate DateTime?   @map("installation_date")
+  address          String?
+  stateId          String?     @map("state_id")
+  districtId       String?     @map("district_id")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @default(now()) @map("updated_at")
+  createdBy        String?     @map("created_by")
+  updatedBy        String?     @map("updated_by")
+  deletedAt        DateTime?   @map("deleted_at")
+
+  state            State?      @relation(fields: [stateId], references: [id], onDelete: SetNull)
+  district         District?   @relation(fields: [districtId], references: [id], onDelete: SetNull)
+
+  complaints       Complaint[]
+
+  @@map("master_installations")
+}
+
+model Complaint {
+  id                  String             @id @default(uuid())
+  formResponseId      String?            @map("form_response_id")
+  applicationId       String             @map("application_id")
+  complainantName     String             @map("complainant_name")
+  complainantPhone    String             @map("complainant_phone")
+  complaintType       String             @map("complaint_type")
+  description         String?
+  submissionTimestamp DateTime           @map("submission_timestamp")
+  syncStatus          String             @default("PENDING") @map("sync_status")
+  syncError           String?            @map("sync_error")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @default(now()) @map("updated_at")
+  createdBy           String?            @map("created_by")
+  updatedBy           String?            @map("updated_by")
+  deletedAt           DateTime?          @map("deleted_at")
+
+  masterInstallation  MasterInstallation @relation(fields: [applicationId], references: [applicationId], onDelete: Restrict)
+
+  tickets             Ticket[]
+
+  @@map("complaints")
+}
+
+model Ticket {
+  id              String      @id @default(uuid())
+  ticketNumber    String      @unique @map("ticket_number")
+  complaintId     String      @map("complaint_id")
+  status          String      @default("RECEIVED")
+  priority        String      @default("STANDARD")
+  dueDate         DateTime?   @map("due_date")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @default(now()) @map("updated_at")
+  createdBy       String?     @map("created_by")
+  updatedBy       String?     @map("updated_by")
+  deletedAt       DateTime?   @map("deleted_at")
+
+  complaint       Complaint   @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  assignments     TicketAssignment[]
+  history         TicketHistory[]
+  initialVisits   InitialVisit[]
+  materialRequests MaterialRequest[]
+  insuranceClaims InsuranceClaim[]
+  serviceReports  ServiceReport[]
+
+  @@map("tickets")
+}
+
+model TicketAssignment {
+  id              String      @id @default(uuid())
+  ticketId        String      @map("ticket_id")
+  engineerId      String      @map("engineer_id")
+  assignedBy      String?     @map("assigned_by")
+  assignedAt      DateTime    @default(now()) @map("assigned_at")
+  acceptedAt      DateTime?   @map("accepted_at")
+  rejectedAt      DateTime?   @map("rejected_at")
+  rejectionReason String?     @map("rejection_reason")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @default(now()) @map("updated_at")
+  createdBy       String?     @map("created_by")
+  updatedBy       String?     @map("updated_by")
+  deletedAt       DateTime?   @map("deleted_at")
+
+  ticket          Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  engineer        Engineer    @relation(fields: [engineerId], references: [id], onDelete: Restrict)
+  assigner        User?       @relation(fields: [assignedBy], references: [id], onDelete: SetNull)
+
+  @@map("ticket_assignments")
+}
+
+model TicketHistory {
+  id            String      @id @default(uuid())
+  ticketId      String      @map("ticket_id")
+  changedBy     String?     @map("changed_by")
+  oldStatus     String?     @map("old_status")
+  newStatus     String      @map("new_status")
+  changeSummary String      @map("change_summary")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @default(now()) @map("updated_at")
+  createdBy     String?     @map("created_by")
+  updatedBy     String?     @map("updated_by")
+  deletedAt     DateTime?   @map("deleted_at")
+
+  ticket        Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user          User?       @relation(fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@map("ticket_history")
+}
+
+model InitialVisit {
+  id          String      @id @default(uuid())
+  ticketId    String      @map("ticket_id")
+  engineerId  String      @map("engineer_id")
+  visitDate   DateTime    @map("visit_date")
+  remarks     String?
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @default(now()) @map("updated_at")
+  createdBy   String?     @map("created_by")
+  updatedBy   String?     @map("updated_by")
+  deletedAt   DateTime?   @map("deleted_at")
+
+  ticket      Ticket      @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  engineer    Engineer    @relation(fields: [engineerId], references: [id], onDelete: Restrict)
+
+  @@map("initial_visits")
+}
+
+model MaterialRequest {
+  id          String      @id @default(uuid())
+  ticketId    String      @map("ticket_id")
+  requestedBy String      @map("requested_by")
+  approvedBy  String?     @map("approved_by")
+  status      String      @default("PENDING")
+  remarks     String?
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @default(now()) @map("updated_at")
+  createdBy   String?     @map("created_by")
+  updatedBy   String?     @map("updated_by")
+  deletedAt   DateTime?   @map("deleted_at")
+
+  ticket      Ticket      @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  engineer    Engineer    @relation(fields: [requestedBy], references: [id], onDelete: Restrict)
+  approver    User?       @relation(fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  items       MaterialRequestItem[]
+
+  @@map("material_requests")
+}
+
+model MaterialRequestItem {
+  id                String          @id @default(uuid())
+  materialRequestId String          @map("material_request_id")
+  itemName          String          @map("item_name")
+  quantity          Int
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @default(now()) @map("updated_at")
+  createdBy         String?         @map("created_by")
+  updatedBy         String?         @map("updated_by")
+  deletedAt         DateTime?       @map("deleted_at")
+
+  materialRequest   MaterialRequest @relation(fields: [materialRequestId], references: [id], onDelete: Cascade)
+
+  @@map("material_request_items")
+}
+
+model InsuranceClaim {
+  id              String      @id @default(uuid())
+  ticketId        String      @map("ticket_id")
+  claimNumber     String      @unique @map("claim_number")
+  providerName    String      @map("provider_name")
+  amountEstimated Decimal     @map("amount_estimated")
+  status          String      @default("SUBMITTED")
+  remarks         String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @default(now()) @map("updated_at")
+  createdBy       String?     @map("created_by")
+  updatedBy       String?     @map("updated_by")
+  deletedAt       DateTime?   @map("deleted_at")
+
+  ticket          Ticket      @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+
+  @@map("insurance_claims")
+}
+
+model ServiceReport {
+  id         String      @id @default(uuid())
+  ticketId   String      @map("ticket_id")
+  reportDate DateTime    @map("report_date")
+  workDone   String      @map("work_done")
+  tatMinutes Int?        @map("tat_minutes")
+  status     String
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @default(now()) @map("updated_at")
+  createdBy  String?     @map("created_by")
+  updatedBy  String?     @map("updated_by")
+  deletedAt  DateTime?   @map("deleted_at")
+
+  ticket     Ticket      @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+
+  @@map("service_reports")
+}
+
+model Attachment {
+  id         String    @id @default(uuid())
+  entityType String    @map("entity_type")
+  entityId   String    @map("entity_id")
+  fileName   String    @map("file_name")
+  fileUrl    String    @map("file_url")
+  mimeType   String?   @map("mime_type")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @default(now()) @map("updated_at")
+  createdBy  String?   @map("created_by")
+  updatedBy  String?   @map("updated_by")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@map("attachments")
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  title     String
+  message   String
+  isRead    Boolean   @default(false) @map("is_read")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
+  deletedAt DateTime? @map("deleted_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String
+  tableName String   @map("table_name")
+  recordId  String   @map("record_id")
+  oldValues String?  @map("old_values") // SQLite doesn't have JSONB, mapped to String/Text
+  newValues String?  @map("new_values") // SQLite doesn't have JSONB, mapped to String/Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model SyncLog {
+  id           String   @id @default(uuid())
+  sheetName    String   @map("sheet_name")
+  rowNumber    Int      @map("row_number")
+  status       String
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("sync_logs")
+}

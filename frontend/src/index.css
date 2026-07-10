@@ -1,0 +1,245 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  /* HSL Sleek Dark Palette */
+  --bg-primary: hsl(222, 47%, 6%);
+  --bg-secondary: hsl(223, 47%, 11%);
+  --bg-card: hsl(224, 47%, 14%);
+  --border-color: hsl(224, 40%, 20%);
+  
+  --primary: hsl(210, 100%, 50%); /* Solar Blue */
+  --primary-hover: hsl(210, 100%, 60%);
+  --primary-glow: hsla(210, 100%, 50%, 0.35);
+  
+  --accent: hsl(174, 100%, 41%); /* Cyan Spark */
+  --accent-glow: hsla(174, 100%, 41%, 0.25);
+  
+  --text-main: hsl(210, 40%, 96%);
+  --text-muted: hsl(215, 20%, 65%);
+  
+  /* Status Colors */
+  --color-received: hsl(210, 100%, 50%); /* Blue */
+  --color-assigned: hsl(280, 80%, 60%); /* Purple */
+  --color-visit: hsl(190, 90%, 50%); /* Cyan */
+  --color-material: hsl(35, 100%, 50%); /* Amber */
+  --color-insurance: hsl(320, 80%, 55%); /* Pink */
+  --color-resolved: hsl(145, 80%, 40%); /* Green */
+  --color-manual: hsl(0, 85%, 55%); /* Red */
+  
+  --font-title: 'Outfit', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --glass-bg: rgba(15, 23, 42, 0.45);
+  --glass-blur: blur(12px);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-title);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* App Grid Layout */
+.app-container {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+}
+
+.main-content {
+  padding: 2.5rem;
+  overflow-y: auto;
+  height: 100vh;
+  background: radial-gradient(circle at top right, hsla(210, 100%, 50%, 0.05), transparent 600px);
+}
+
+/* Card glassmorphism widget */
+.panel-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.75rem;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+  transition: var(--transition-smooth);
+}
+
+.panel-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--primary-hover);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3), 0 0 20px var(--primary-glow);
+}
+
+/* Page Headers */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2.5rem;
+}
+
+.page-title {
+  font-size: 2.25rem;
+  color: var(--text-main);
+  background: linear-gradient(135deg, #fff 0%, var(--text-muted) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Custom interactive inputs & buttons */
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, hsl(210, 100%, 40%) 100%);
+  color: #fff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--font-title);
+  font-weight: 500;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px var(--primary-glow);
+  transition: var(--transition-smooth);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px var(--primary-glow), 0 0 12px var(--primary);
+  filter: brightness(1.1);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 0.75rem 1.5rem;
+  font-family: var(--font-title);
+  font-weight: 500;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--text-muted);
+}
+
+/* Tables styling */
+.custom-table-container {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+  margin-top: 1.5rem;
+}
+
+.custom-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.custom-table th {
+  background-color: var(--bg-card);
+  padding: 1rem 1.25rem;
+  font-family: var(--font-title);
+  font-weight: 500;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.custom-table td {
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+.custom-table tbody tr {
+  transition: var(--transition-smooth);
+}
+
+.custom-table tbody tr:hover {
+  background-color: hsla(224, 40%, 20%, 0.3);
+  cursor: pointer;
+}
+
+/* Status badge pills */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.status-received { background-color: hsla(210, 100%, 50%, 0.15); color: var(--color-received); }
+.status-assigned { background-color: hsla(280, 80%, 60%, 0.15); color: var(--color-assigned); }
+.status-visit { background-color: hsla(190, 90%, 50%, 0.15); color: var(--color-visit); }
+.status-material { background-color: hsla(35, 100%, 50%, 0.15); color: var(--color-material); }
+.status-insurance { background-color: hsla(320, 80%, 55%, 0.15); color: var(--color-insurance); }
+.status-resolved { background-color: hsla(145, 80%, 40%, 0.15); color: var(--color-resolved); }
+.status-manual { background-color: hsla(0, 85%, 55%, 0.15); color: var(--color-manual); }
+
+/* Custom Form elements */
+.form-group {
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-label {
+  font-family: var(--font-title);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.form-input {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  transition: var(--transition-smooth);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
