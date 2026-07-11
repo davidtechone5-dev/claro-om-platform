@@ -290,39 +290,40 @@ export const ticketController = {
     try {
       const totalAmc = await prisma.masterInstallation.count();
 
-      // Group by district to get actual coverage
-      const installations = await prisma.masterInstallation.findMany({
+      // Group by district to get actual coverage using DB-level aggregates
+      const districts = await prisma.district.findMany({
         include: {
-          district: true
+          _count: {
+            select: { masterInstallations: true }
+          }
         }
       });
 
-      const districtMap: Record<string, number> = {};
-      installations.forEach((inst) => {
-        const dName = inst.district?.name || "Unknown";
-        districtMap[dName] = (districtMap[dName] || 0) + 1;
-      });
-
-      const districtCoverage = Object.entries(districtMap)
-        .map(([name, count]) => ({
-          name,
-          count,
-          pct: totalAmc > 0 ? Math.round((count / totalAmc) * 100) : 0
+      const districtCoverage = districts
+        .map((d) => ({
+          name: d.name,
+          count: d._count.masterInstallations,
+          pct: totalAmc > 0 ? Math.round((d._count.masterInstallations / totalAmc) * 100) : 0
         }))
+        .filter((d) => d.count > 0)
         .sort((a, b) => b.count - a.count);
 
-      // Simple renewal window projection based on installation date:
-      // Renewal is due every 6 months. Let's see when the next renewal is relative to "now".
+      // Select only the date field to minimize network payload
+      const installationDates = await prisma.masterInstallation.findMany({
+        select: {
+          installationDate: true
+        }
+      });
+
       const now = new Date();
       let next30 = 0;
       let next60 = 0;
       let next90 = 0;
 
-      installations.forEach((inst) => {
+      installationDates.forEach((inst) => {
         if (!inst.installationDate) return;
         const instDate = new Date(inst.installationDate);
         
-        // Project to next 6 months interval
         const diffMs = now.getTime() - instDate.getTime();
         const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.4);
         const cycles = Math.ceil(diffMonths / 6);
