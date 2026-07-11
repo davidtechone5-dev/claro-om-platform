@@ -180,6 +180,7 @@ model Complaint {
   tickets             Ticket[]
 
   @@map("complaints")
+  @@index([applicationId])
 }
 
 model Ticket {
@@ -205,6 +206,7 @@ model Ticket {
   serviceReports  ServiceReport[]
 
   @@map("tickets")
+  @@index([complaintId])
 }
 
 model TicketAssignment {
@@ -227,6 +229,8 @@ model TicketAssignment {
   assigner        User?       @relation(fields: [assignedBy], references: [id], onDelete: SetNull)
 
   @@map("ticket_assignments")
+  @@index([ticketId])
+  @@index([engineerId])
 }
 
 model TicketHistory {
