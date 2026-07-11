@@ -131,6 +131,24 @@ export function TicketDetails() {
             </div>
           </div>
 
+          {/* Spreadsheet Reference Fields */}
+          {(ticket.metadata || ticket.complaint?.metadata) && (
+            <div className="panel-card">
+              <h3 style={styles.cardTitle}>Spreadsheet Row Fields (Synced Live)</h3>
+              <div style={{ ...styles.detailsGrid, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+                {Object.entries(ticket.metadata || ticket.complaint?.metadata || {})
+                  .filter(([key]) => !["__row_number", "__sheet_name", "Ticket ID", "Live Stage", "Sync Status", "Sync Error"].includes(key))
+                  .map(([key, val]: any) => (
+                    <div key={key} style={{ borderBottom: "1px solid var(--bg-secondary)", paddingBottom: "0.5rem" }}>
+                      <label style={styles.detailLabel}>{key}</label>
+                      <div style={styles.detailVal}>{val?.toString() || "—"}</div>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          )}
+
           {/* SLA Warning */}
           <div className="panel-card" style={styles.slaPanel}>
             <Calendar size={20} color="var(--primary)" />

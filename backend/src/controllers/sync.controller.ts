@@ -85,7 +85,8 @@ export const syncController = {
             complainantPhone,
             complaintType,
             description,
-            submissionTimestamp: new Date(timestampStr)
+            submissionTimestamp: new Date(timestampStr),
+            metadata: payload
           }
         });
 
@@ -230,13 +231,14 @@ export const syncController = {
           resolvedStatus = "RESOLVED";
         }
 
-        // Update Ticket Status if changed
-        if (resolvedStatus !== ticket.status) {
-          await prisma.ticket.update({
-            where: { id: ticket.id },
-            data: { status: resolvedStatus }
-          });
-        }
+        // Update Ticket Status and Metadata
+        await prisma.ticket.update({
+          where: { id: ticket.id },
+          data: { 
+            status: resolvedStatus,
+            metadata: payload
+          }
+        });
 
         return res.status(200).json({
           ticketNumber: ticket.ticketNumber,
@@ -254,7 +256,8 @@ export const syncController = {
           complaintType,
           description,
           submissionTimestamp: new Date(timestampStr),
-          syncStatus: "SYNCED"
+          syncStatus: "SYNCED",
+          metadata: payload
         }
       });
 
@@ -282,7 +285,8 @@ export const syncController = {
           ticketNumber,
           complaintId: complaint.id,
           status: "RECEIVED",
-          priority: "STANDARD"
+          priority: (payload["Priority"] || payload["priority"] || "STANDARD").toString().trim(),
+          metadata: payload
         }
       });
 
@@ -908,6 +912,12 @@ export const syncController = {
           continue;
         }
 
+        // Construct dynamic metadata map for all 40+ columns
+        const rowMetadata: Record<string, any> = {};
+        headers.forEach((h, i) => {
+          rowMetadata[h] = row[i] || "";
+        });
+
         // 2. Complaint
         const complaintId = randomUUID();
         complaints.push({
@@ -919,7 +929,8 @@ export const syncController = {
           complaintType,
           description,
           submissionTimestamp: complaintDate,
-          syncStatus: "SYNCED"
+          syncStatus: "SYNCED",
+          metadata: rowMetadata
         });
 
         // Engineer lookup
@@ -949,9 +960,10 @@ export const syncController = {
           ticketNumber,
           complaintId,
           status: liveStage,
-          priority: "STANDARD",
+          priority: getVal("Priority") || "STANDARD",
           createdAt: complaintDate,
-          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000)
+          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
+          metadata: rowMetadata
         });
 
         // 4. Assignment
