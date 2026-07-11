@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: claro-db
+    restart: always
+    environment:
+      POSTGRES_USER: claro_user
+      POSTGRES_PASSWORD: claro_password
+      POSTGRES_DB: claro_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: claro-backend-api
+    restart: always
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://claro_user:claro_password@db:5432/claro_platform?schema=public
+      DIRECT_URL: postgresql://claro_user:claro_password@db:5432/claro_platform?schema=public
+      JWT_SECRET: claro_super_secure_jwt_secret_key_2026
+      JWT_EXPIRATION: 24h
+      INTEGRATION_SECRET: claro_integration_secret_token_12345
+      GOOGLE_SPREADSHEET_ID: https://docs.google.com/spreadsheets/d/14ZCBnG-TBiS9wYrOe9zRkVJfdKt1vvVhZTZGUi842gw/edit?gid=755478552#gid=755478552
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:3000/api/v1
+    container_name: claro-frontend-web
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata:
