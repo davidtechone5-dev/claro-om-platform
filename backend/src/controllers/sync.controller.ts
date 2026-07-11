@@ -90,11 +90,25 @@ export const syncController = {
 
         const ticket = existingComplaint.tickets[0];
 
-        // Retrieve default Admin user for assignments reference
-        const adminUser = await prisma.user.findFirst({
-          where: { role: { name: "Admin" } }
+        // Seed/retrieve role and admin user to map associations
+        const adminRole = await prisma.role.upsert({
+          where: { name: "Admin" },
+          update: {},
+          create: { name: "Admin", description: "System Administrator" }
         });
-        const adminId = adminUser ? adminUser.id : "admin-default-id";
+
+        const adminUser = await prisma.user.upsert({
+          where: { email: "admin@claro.com" },
+          update: {},
+          create: {
+            id: "admin-default-id",
+            email: "admin@claro.com",
+            fullName: "System Admin",
+            passwordHash: "$2b$10$tM2LdskVp1Jz/KxX9.jXKeX6g9nK1lH4B2FwYxI49lG1E1E1E1E1E",
+            roleId: adminRole.id
+          }
+        });
+        const adminId = adminUser.id;
 
         // Update Engineer Assignment if changed
         let engineerProfileId: string | null = null;
@@ -727,10 +741,19 @@ export const syncController = {
         update: {},
         create: { name: "Admin", description: "System Administrator" }
       });
-      const adminUser = await prisma.user.findFirst({
-        where: { role: { name: "Admin" } }
+
+      const adminUser = await prisma.user.upsert({
+        where: { email: "admin@claro.com" },
+        update: {},
+        create: {
+          id: "admin-default-id",
+          email: "admin@claro.com",
+          fullName: "System Admin",
+          passwordHash: "$2b$10$tM2LdskVp1Jz/KxX9.jXKeX6g9nK1lH4B2FwYxI49lG1E1E1E1E1E",
+          roleId: adminRole.id
+        }
       });
-      const adminId = adminUser ? adminUser.id : "admin-default-id";
+      const adminId = adminUser.id;
 
       let installationsCount = 0;
       let ticketsCount = 0;
