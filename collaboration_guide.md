@@ -1,136 +1,109 @@
-# Claro O&M Platform - Team Collaboration & Git Workflow Guide
+# Claro O&M Platform - Team Collaboration & Local Developer Guide (Docker)
 
-This guide outlines how your team can collaborate on different branches, develop locally, test changes using preview environments, and deploy safely to production.
-
----
-
-## 1. Branching Strategy
-
-To keep the live website (`https://claro-om-platform.vercel.app`) stable, use the **Feature Branching** workflow:
-
-```mermaid
-gitGraph
-    commit
-    branch feature/add-charts
-    checkout feature/add-charts
-    commit
-    commit
-    checkout main
-    merge feature/add-charts
-    commit
-```
-
-*   **`main` Branch (Production):** 
-    *   This is the protected, stable production branch.
-    *   **Render** and **Vercel** are linked to this branch. Any merge or push to `main` instantly deploys changes to the live site.
-*   **`feature/name` Branches (Development):** 
-    *   Every developer creates a separate branch for their task (e.g., `feature/warehouse-kpi`, `bugfix/sheet-webhook`).
-    *   Developers work on their branches, push code, and open a Pull Request (PR) to merge into `main`.
+This guide contains the absolute most basic, step-by-step instructions for running the Claro O&M Platform locally. It explains how to build the application, set up Git branches, run tests, and connect your local workspace either to a **local isolated database** or directly to your **live production Supabase database**.
 
 ---
 
-## 2. Step-by-Step Developer Workflow
+## 1. Prerequisites (Do this first)
 
-When a team member starts a new task, they should follow these steps:
+Make sure you have the following installed on your machine:
+1.  **Git:** [Download & Install Git](https://git-scm.com/downloads) (or use [GitHub Desktop](https://desktop.github.com/)).
+2.  **Docker Desktop:** [Download & Install Docker Desktop](https://www.docker.com/products/docker-desktop/) (ensure it is running in the background).
 
-### Step A: Pull Latest Changes
-Make sure your local repository is up to date with the live code:
+---
+
+## 2. Git Collaboration & Branches Workflow
+
+To keep the live website (`https://claro-om-platform.vercel.app`) safe, always work on feature branches.
+
+### Step A: Clone the Repository (For new team members)
+Open your terminal (Command Prompt, PowerShell, or Git Bash) and run:
 ```bash
-git checkout main
-git pull origin main
+git clone https://github.com/davidtechone5-dev/claro-om-platform.git
+cd claro-om-platform
 ```
 
 ### Step B: Create a Feature Branch
-Create and switch to a descriptive branch name:
+Before writing any code, create a separate branch:
 ```bash
-git checkout -b feature/add-warehouse-filters
+git checkout -b feature/your-task-name
 ```
+*(Example: `git checkout -b feature/add-metrics`)*
 
-### Step C: Spin up Local Docker Environment
-Start the local developer environment (PostgreSQL, Backend API, Frontend React):
+### Step C: Commit and Push Changes
+When your code changes are done and compiled without errors, push them:
 ```bash
-docker compose up --build
+git add .
+git commit -m "feat: implement descriptive change summary"
+git push origin feature/your-task-name
 ```
-*   The API will run at `http://localhost:3000`
-*   The Web App will run at `http://localhost` (Port 80)
-*   *Note: Any edits you make in your IDE will automatically hot-reload in Docker!*
-
-### Step D: Implement and Verify Code
-Before pushing, ensure both services compile cleanly with zero errors:
-1.  **Backend Check:** Run `npm.cmd run build` inside `/backend` (checks TypeScript types).
-2.  **Frontend Check:** Run `npm.cmd run build` inside `/frontend` (checks Vite bundle).
-
-### Step E: Push to GitHub & Create Pull Request
-1.  Stage, commit, and push your branch:
-    ```bash
-    git add .
-    git commit -m "feat: add filters to warehouse operator page"
-    git push origin feature/add-warehouse-filters
-    ```
-2.  Go to your GitHub repository and click **`Compare & pull request`**.
-3.  Assign team members to review your code.
+Then, open GitHub, select your branch, and click **`Create Pull Request`** to request a code review!
 
 ---
 
-## 3. Preview Deployments on Vercel & Render
+## 3. Option A: Run Locally using the LOCAL Database (Safe Sandbox)
 
-One of the best features of Vercel and Render is **automated staging environments**:
+This mode runs a completely local, isolated PostgreSQL database container. It is **100% safe** for local development because any changes you make will **not** affect the live production website database.
 
-### A. Vercel Frontend Previews (Automatic)
-*   When a developer opens a Pull Request on GitHub, Vercel automatically builds a **unique preview website** just for that branch (e.g. `https://claro-om-platform-git-feature-xxx.vercel.app`).
-*   You can open this preview link in your browser to inspect and test your team member's UI changes *before* merging their code to the live production website!
-
-### B. Render PR Previews (Optional)
-*   You can configure Render to spin up a temporary "PR Review Instance" of your backend Express API when a PR is opened, which will destroy itself once the PR is merged or closed. (Settings can be enabled in the Render Dashboard ➡️ Pull Request Previews).
-
----
-
-## 4. How to Handle Database Schema Changes (Prisma)
-
-If a task requires adding a new table or field to the database (in [schema.prisma](file:///c:/claro/backend/prisma/schema.prisma)):
-
-1.  The developer edits `schema.prisma`.
-2.  They apply the migration locally to their local Docker PostgreSQL container:
-    ```bash
-    npx prisma db push
-    ```
-3.  When they commit and merge into `main`, Render will automatically execute `npx prisma db push` on the production Supabase database to apply the new schema fields without losing any data!
-
----
-
-## 5. Local End-to-End Execution Guide (Using Docker)
-
-Follow these steps to run the complete stack locally for development or testing:
-
-### Step 1: Clone and Prepare the Project
-1.  Clone the repository to your local machine.
-2.  Ensure you have **Docker Desktop** installed and running.
-
-### Step 2: Spin Up the Stack
-Open your terminal in the project root directory and run:
+### Step 1: Spin Up the Stack
+Open your terminal in the project root directory (`claro-om-platform`) and run:
 ```bash
 docker compose up --build
 ```
-This builds and starts:
-*   The **PostgreSQL Database** (`claro-db`)
-*   The **Express Backend API** (`claro-backend-api` on `http://localhost:3000`)
-*   The **React Frontend Client** (`claro-frontend-web` on `http://localhost`)
+*Wait 1–2 minutes for the containers to compile and start.*
+*   **Web App Dashboard:** Open **`http://localhost`** in your browser.
+*   **Backend API Service:** Live at `http://localhost:3000`.
 
-### Step 3: Seed the Database (Option A - Mock Data)
-Since the local PostgreSQL database starts completely empty, you can seed it with default mock users and installations:
+### Step 2: Seed the Local Database (Mock Data)
+Since the local PostgreSQL database container starts completely empty, run this command in a new terminal window to seed it with default mock users and master installations:
 ```bash
 docker compose exec backend npx prisma db seed
 ```
-*   *Default local login:* Email: `admin@claro.com` | Password: `admin123`
+*   **Default Admin Login:**
+    *   **Email:** `admin@claro.com`
+    *   **Password:** `admin123`
 
-### Step 4: Import Google Sheet Data (Option B - Real Data)
-If you want to pull your live Google Sheet data (640+ installations and tickets) into your local database, run:
+### Step 3: Stop the Stack
+To stop the local environment, press **`Ctrl + C`** in your terminal, then run:
 ```bash
-docker compose exec backend npm run db:import
+docker compose down
 ```
-This script reads your spreadsheet data directly and populates your local PostgreSQL database in under 5 seconds!
 
-### Step 5: Test the Live Application
-*   Open **`http://localhost`** in your browser to explore the dashboard.
-*   Try assigning an engineer or changing ticket filters—it runs instantly using your local PostgreSQL database!
-*   To shut down the stack, press `Ctrl + C` in your terminal and run `docker compose down`.
+---
+
+## 4. Option B: Run Locally using the LIVE Supabase Database (Real Data)
+
+This mode connects your local development containers directly to your **live production Supabase database**. Any changes or assignments you test locally will immediately reflect on the live production website!
+
+### Step 1: Get the Connection Strings
+1.  Log in to your **Render Dashboard** (`dashboard.render.com`) ➡️ `claro-backend` ➡️ **`Environment`** tab.
+2.  Copy your live **`DATABASE_URL`** and **`DIRECT_URL`** values.
+
+### Step 2: Configure `docker-compose.yml`
+Open [docker-compose.yml](file:///c:/claro/docker-compose.yml) in your code editor. Under the `backend:` service ➡️ `environment:` block, replace the local connection links with your live Supabase credentials:
+
+```yaml
+    environment:
+      PORT: 3000
+      # PASTE YOUR LIVE CONNECTION URLS BELOW:
+      DATABASE_URL: "postgresql://postgres.[your-supabase-id]..."
+      DIRECT_URL: "postgresql://postgres.[your-supabase-id]..."
+      JWT_SECRET: claro_super_secure_jwt_secret_key_2026
+      JWT_EXPIRATION: 24h
+      INTEGRATION_SECRET: claro_integration_secret_token_12345
+```
+
+### Step 3: Run the Live Connected Environment
+Open your terminal in the root folder and start the containers:
+```bash
+docker compose up --build
+```
+Your local website dashboard at **`http://localhost`** is now fetching and saving data directly to your **live Supabase database**! You will see all 640+ real tickets load instantly.
+
+### Step 4: Revert Back to Local Sandbox (Important)
+Once you are done debugging with live data, revert the connection strings in `docker-compose.yml` to the local configurations:
+```yaml
+      DATABASE_URL: postgresql://claro_user:claro_password@db:5432/claro_platform?schema=public
+      DIRECT_URL: postgresql://claro_user:claro_password@db:5432/claro_platform?schema=public
+```
+This prevents you from accidentally modifying live database records during daily development tasks.
