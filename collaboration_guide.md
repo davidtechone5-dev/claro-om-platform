@@ -95,3 +95,42 @@ If a task requires adding a new table or field to the database (in [schema.prism
     npx prisma db push
     ```
 3.  When they commit and merge into `main`, Render will automatically execute `npx prisma db push` on the production Supabase database to apply the new schema fields without losing any data!
+
+---
+
+## 5. Local End-to-End Execution Guide (Using Docker)
+
+Follow these steps to run the complete stack locally for development or testing:
+
+### Step 1: Clone and Prepare the Project
+1.  Clone the repository to your local machine.
+2.  Ensure you have **Docker Desktop** installed and running.
+
+### Step 2: Spin Up the Stack
+Open your terminal in the project root directory and run:
+```bash
+docker compose up --build
+```
+This builds and starts:
+*   The **PostgreSQL Database** (`claro-db`)
+*   The **Express Backend API** (`claro-backend-api` on `http://localhost:3000`)
+*   The **React Frontend Client** (`claro-frontend-web` on `http://localhost`)
+
+### Step 3: Seed the Database (Option A - Mock Data)
+Since the local PostgreSQL database starts completely empty, you can seed it with default mock users and installations:
+```bash
+docker compose exec backend npx prisma db seed
+```
+*   *Default local login:* Email: `admin@claro.com` | Password: `admin123`
+
+### Step 4: Import Google Sheet Data (Option B - Real Data)
+If you want to pull your live Google Sheet data (640+ installations and tickets) into your local database, run:
+```bash
+docker compose exec backend npm run db:import
+```
+This script reads your spreadsheet data directly and populates your local PostgreSQL database in under 5 seconds!
+
+### Step 5: Test the Live Application
+*   Open **`http://localhost`** in your browser to explore the dashboard.
+*   Try assigning an engineer or changing ticket filters—it runs instantly using your local PostgreSQL database!
+*   To shut down the stack, press `Ctrl + C` in your terminal and run `docker compose down`.
