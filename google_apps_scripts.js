@@ -15,8 +15,8 @@
 
 // Configuration Options
 var CONFIG = {
-  // Exposing local server via active ngrok tunnel
-  API_BASE_URL: "https://willpower-acutely-dedicate.ngrok-free.dev/api/v1", 
+  // Exposing live Render backend service
+  API_BASE_URL: "https://claro-om-platform.onrender.com/api/v1", 
   
   // A secure token that must match the backend's token for authorization
   API_SECRET_TOKEN: "claro_integration_secret_token_12345" 
