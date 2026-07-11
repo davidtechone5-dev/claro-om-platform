@@ -756,10 +756,11 @@ export const syncController = {
       });
       const adminId = adminUser.id;
 
-      // --- OPTIMIZATION STEP 1: Pre-process States and Districts ---
-      // Collect unique state names and district names
+      // --- OPTIMIZATION STEP 1: Pre-process States, Districts, and Engineers ---
+      // Collect unique state names, district names, and engineers from sheet rows
       const uniqueStates = new Set<string>();
       const stateDistricts = new Map<string, Set<string>>(); // state -> districts
+      const uniqueEngineers = new Map<string, { name: string, email: string, phone: string }>(); // email -> details
 
       for (const row of dataRows) {
         const getVal = (colName: string) => {
@@ -777,9 +778,23 @@ export const syncController = {
             stateDistricts.get(stateStr)!.add(districtStr);
           }
         }
+
+        const assignedEngineerName = getVal("Assigned Engineer Name");
+        const engineerEmail = getVal("Engineer Email") || getVal("Assigned Engineer Email");
+        const engineerPhone = getVal("Engineer Phone") || getVal("Assigned Engineer Phone");
+        if (assignedEngineerName && engineerEmail && engineerEmail.trim() !== "" && engineerEmail.includes("@")) {
+          const emailTrim = engineerEmail.trim().toLowerCase();
+          if (!uniqueEngineers.has(emailTrim)) {
+            uniqueEngineers.set(emailTrim, {
+              name: assignedEngineerName.trim(),
+              email: emailTrim,
+              phone: engineerPhone.trim() || "N/A"
+            });
+          }
+        }
       }
 
-      // Upsert States in batch / sequence (usually very small list)
+      // Upsert States in batch / sequence
       const stateMap = new Map<string, string>(); // name -> id
       for (const stateName of uniqueStates) {
         const state = await prisma.state.upsert({
@@ -790,7 +805,7 @@ export const syncController = {
         stateMap.set(stateName, state.id);
       }
 
-      // Upsert Districts in sequence (also small list)
+      // Upsert Districts in sequence
       const districtMap = new Map<string, string>(); // "stateId:districtName" -> id
       for (const [stateName, districts] of stateDistricts.entries()) {
         const stateId = stateMap.get(stateName)!;
@@ -812,11 +827,15 @@ export const syncController = {
         }
       }
 
-      // --- OPTIMIZATION STEP 2: Pre-fetch Engineers ---
-      const dbEngineers = await prisma.engineer.findMany();
-      const engineerMap = new Map<string, string>(); // name.trim().toLowerCase() -> id
-      for (const eng of dbEngineers) {
-        engineerMap.set(eng.name.trim().toLowerCase(), eng.id);
+      // Upsert Engineers dynamically (makes sure they are registered on the platform)
+      const engineerMap = new Map<string, string>(); // email -> id
+      for (const eng of uniqueEngineers.values()) {
+        const dbEng = await prisma.engineer.upsert({
+          where: { email: eng.email },
+          update: { name: eng.name, phone: eng.phone },
+          create: { name: eng.name, email: eng.email, phone: eng.phone }
+        });
+        engineerMap.set(eng.email, dbEng.id);
       }
 
       // --- OPTIMIZATION STEP 3: Batch Data Arrays ---
@@ -861,6 +880,7 @@ export const syncController = {
         const initialVisitDateStr = getVal("Initial Visit Date");
         const serviceReportDateStr = getVal("Service Report Date");
         const materialStatusStr = getVal("Material Status");
+        const engineerEmail = getVal("Engineer Email") || getVal("Assigned Engineer Email");
 
         if (!applicationId) continue;
 
@@ -904,8 +924,8 @@ export const syncController = {
 
         // Engineer lookup
         let engineerDbId = null;
-        if (assignedEngineerName && assignedEngineerName !== "N/A" && assignedEngineerName.trim() !== "") {
-          engineerDbId = engineerMap.get(assignedEngineerName.trim().toLowerCase()) || null;
+        if (engineerEmail && engineerEmail.trim() !== "") {
+          engineerDbId = engineerMap.get(engineerEmail.trim().toLowerCase()) || null;
         }
 
         // Stage
