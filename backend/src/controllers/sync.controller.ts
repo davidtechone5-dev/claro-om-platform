@@ -27,9 +27,11 @@ export const syncController = {
     const serviceReportDateStr = (payload["Service Report Date"] || "").toString().trim();
     const materialStatusStr = (payload["Material Status"] || "").toString().trim();
     const timestampStr = payload["Timestamp"] || new Date().toISOString();
+    const liveStageFromPayload = (payload["Live Stage"] || payload["live_stage"] || "").toString().trim().toUpperCase();
+    const priorityFromPayload = (payload["Priority"] || payload["priority"] || "").toString().trim().toUpperCase();
 
     console.log("📥 Incoming webhook payload keys:", Object.keys(payload));
-    console.log(`📥 Row: ${rowNumber} | Application ID: '${applicationId}' | Ticket ID from payload: '${ticketNumberFromPayload}'`);
+    console.log(`📥 Row: ${rowNumber} | Application ID: '${applicationId}' | Ticket ID from payload: '${ticketNumberFromPayload}' | Stage: '${liveStageFromPayload}' | Priority: '${priorityFromPayload}'`);
 
     if (!applicationId) {
       const errorMsg = "Missing required parameter 'Application ID'";
@@ -171,71 +173,83 @@ export const syncController = {
 
         let resolvedStatus = ticket.status;
 
-        // 1. Update Initial Visit if provided
-        if (visitDate && engineerProfileId) {
-          await prisma.initialVisit.deleteMany({
-            where: { ticketId: ticket.id }
-          });
-          await prisma.initialVisit.create({
-            data: {
-              ticketId: ticket.id,
-              engineerId: engineerProfileId,
-              visitDate,
-              remarks: "Completed diagnostic check."
+        // If Live Stage is explicitly set in the sheet payload, use it!
+        const validStages = ["RECEIVED", "ASSIGNED", "INITIAL_VISIT_COMPLETED", "MATERIAL_REQUESTED", "INSURANCE_SUBMITTED", "RESOLVED", "CLOSED", "MANUAL_ASSIGNMENT_REQUIRED"];
+        if (liveStageFromPayload && validStages.includes(liveStageFromPayload)) {
+          resolvedStatus = liveStageFromPayload;
+        } else {
+          // Fall back to date-based status inference
+          if (visitDate && engineerProfileId) {
+            await prisma.initialVisit.deleteMany({
+              where: { ticketId: ticket.id }
+            });
+            await prisma.initialVisit.create({
+              data: {
+                ticketId: ticket.id,
+                engineerId: engineerProfileId,
+                visitDate,
+                remarks: "Completed diagnostic check."
+              }
+            });
+            if (resolvedStatus === "ASSIGNED" || resolvedStatus === "RECEIVED") {
+              resolvedStatus = "INITIAL_VISIT_COMPLETED";
             }
-          });
-          if (resolvedStatus === "ASSIGNED" || resolvedStatus === "RECEIVED") {
-            resolvedStatus = "INITIAL_VISIT_COMPLETED";
+          }
+
+          if (materialStatusStr && materialStatusStr !== "N/A" && engineerProfileId) {
+            const statusVal = materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase();
+            await prisma.materialRequest.deleteMany({
+              where: { ticketId: ticket.id }
+            });
+            const matRequest = await prisma.materialRequest.create({
+              data: {
+                ticketId: ticket.id,
+                requestedBy: engineerProfileId,
+                status: statusVal,
+                remarks: "Required solar components."
+              }
+            });
+            await prisma.materialRequestItem.create({
+              data: {
+                materialRequestId: matRequest.id,
+                itemName: "Solar Pump Controller Card",
+                quantity: 1
+              }
+            });
+            if (resolvedStatus !== "RESOLVED") {
+              resolvedStatus = "MATERIAL_REQUESTED";
+            }
+          }
+
+          if (reportDate) {
+            await prisma.serviceReport.deleteMany({
+              where: { ticketId: ticket.id }
+            });
+            await prisma.serviceReport.create({
+              data: {
+                ticketId: ticket.id,
+                reportDate,
+                workDone: "Inspected wiring and restored system operation.",
+                status: "COMPLETED"
+              }
+            });
+            resolvedStatus = "RESOLVED";
           }
         }
 
-        // 2. Update Material Request if status changed
-        if (materialStatusStr && materialStatusStr !== "N/A" && engineerProfileId) {
-          const statusVal = materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase();
-          await prisma.materialRequest.deleteMany({
-            where: { ticketId: ticket.id }
-          });
-          const matRequest = await prisma.materialRequest.create({
-            data: {
-              ticketId: ticket.id,
-              requestedBy: engineerProfileId,
-              status: statusVal,
-              remarks: "Required solar components."
-            }
-          });
-          await prisma.materialRequestItem.create({
-            data: {
-              materialRequestId: matRequest.id,
-              itemName: "Solar Pump Controller Card",
-              quantity: 1
-            }
-          });
-          if (resolvedStatus !== "RESOLVED") {
-            resolvedStatus = "MATERIAL_REQUESTED";
-          }
+        // Determine Priority from sheet dropdown
+        let resolvedPriority = ticket.priority;
+        const validPriorities = ["CRITICAL", "URGENT", "STANDARD", "NORMAL", "LOW"];
+        if (priorityFromPayload && validPriorities.includes(priorityFromPayload)) {
+          resolvedPriority = priorityFromPayload === "NORMAL" ? "STANDARD" : priorityFromPayload;
         }
 
-        // 3. Update Service Report if resolution date provided
-        if (reportDate) {
-          await prisma.serviceReport.deleteMany({
-            where: { ticketId: ticket.id }
-          });
-          await prisma.serviceReport.create({
-            data: {
-              ticketId: ticket.id,
-              reportDate,
-              workDone: "Inspected wiring and restored system operation.",
-              status: "COMPLETED"
-            }
-          });
-          resolvedStatus = "RESOLVED";
-        }
-
-        // Update Ticket Status and Metadata
+        // Update Ticket Status, Priority and Metadata
         await prisma.ticket.update({
           where: { id: ticket.id },
           data: { 
             status: resolvedStatus,
+            priority: resolvedPriority,
             metadata: payload
           }
         });
@@ -940,15 +954,29 @@ export const syncController = {
         }
 
         // Stage
+        const liveStageStr = getVal("Live Stage").trim().toUpperCase();
         let liveStage = "RECEIVED";
-        if (serviceReportDateStr) {
-          liveStage = "RESOLVED";
-        } else if (materialStatusStr && materialStatusStr !== "N/A") {
-          liveStage = "MATERIAL_REQUESTED";
-        } else if (initialVisitDateStr) {
-          liveStage = "INITIAL_VISIT_COMPLETED";
-        } else if (engineerDbId) {
-          liveStage = "ASSIGNED";
+        const validStages = ["RECEIVED", "ASSIGNED", "INITIAL_VISIT_COMPLETED", "MATERIAL_REQUESTED", "INSURANCE_SUBMITTED", "RESOLVED", "CLOSED", "MANUAL_ASSIGNMENT_REQUIRED"];
+        if (liveStageStr && validStages.includes(liveStageStr)) {
+          liveStage = liveStageStr;
+        } else {
+          if (serviceReportDateStr) {
+            liveStage = "RESOLVED";
+          } else if (materialStatusStr && materialStatusStr !== "N/A") {
+            liveStage = "MATERIAL_REQUESTED";
+          } else if (initialVisitDateStr) {
+            liveStage = "INITIAL_VISIT_COMPLETED";
+          } else if (engineerDbId) {
+            liveStage = "ASSIGNED";
+          }
+        }
+
+        // Priority
+        const priorityStr = getVal("Priority").trim().toUpperCase();
+        let priority = "STANDARD";
+        const validPriorities = ["CRITICAL", "URGENT", "STANDARD", "NORMAL", "LOW"];
+        if (priorityStr && validPriorities.includes(priorityStr)) {
+          priority = priorityStr === "NORMAL" ? "STANDARD" : priorityStr;
         }
 
         const ticketNumber = ticketNumberStr || `CLR-${rowNumber}-${Date.now().toString().slice(-4)}`;
@@ -960,7 +988,7 @@ export const syncController = {
           ticketNumber,
           complaintId,
           status: liveStage,
-          priority: getVal("Priority") || "STANDARD",
+          priority: priority,
           createdAt: complaintDate,
           dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
           metadata: rowMetadata
