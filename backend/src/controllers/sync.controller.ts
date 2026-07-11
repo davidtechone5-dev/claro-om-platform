@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { randomUUID } from "crypto";
 import { prisma } from "../db.js";
 import { assignmentService } from "../services/assignment.service.js";
 
@@ -717,8 +718,8 @@ export const syncController = {
         return res.status(400).json({ detail: "Downloaded spreadsheet contains no data rows." });
       }
 
-      // Extract headers from Row 1
-      const headers = rows[0];
+      // Extract headers from Row 1 and normalize them (BOM-safe and case/space-safe)
+      const headers = rows[0].map((h) => h.trim().replace(/^\uFEFF/, ""));
       const dataRows = rows.slice(1);
 
       // 2. Clear dynamic tables to mirror deletions!
@@ -755,16 +756,92 @@ export const syncController = {
       });
       const adminId = adminUser.id;
 
-      let installationsCount = 0;
-      let ticketsCount = 0;
+      // --- OPTIMIZATION STEP 1: Pre-process States and Districts ---
+      // Collect unique state names and district names
+      const uniqueStates = new Set<string>();
+      const stateDistricts = new Map<string, Set<string>>(); // state -> districts
+
+      for (const row of dataRows) {
+        const getVal = (colName: string) => {
+          const idx = headers.indexOf(colName);
+          return idx !== -1 ? row[idx] : "";
+        };
+        const stateStr = getVal("State") || "Maharashtra";
+        const districtStr = getVal("District") || "Unknown";
+        if (stateStr) {
+          uniqueStates.add(stateStr);
+          if (!stateDistricts.has(stateStr)) {
+            stateDistricts.set(stateStr, new Set());
+          }
+          if (districtStr) {
+            stateDistricts.get(stateStr)!.add(districtStr);
+          }
+        }
+      }
+
+      // Upsert States in batch / sequence (usually very small list)
+      const stateMap = new Map<string, string>(); // name -> id
+      for (const stateName of uniqueStates) {
+        const state = await prisma.state.upsert({
+          where: { name: stateName },
+          update: {},
+          create: { name: stateName }
+        });
+        stateMap.set(stateName, state.id);
+      }
+
+      // Upsert Districts in sequence (also small list)
+      const districtMap = new Map<string, string>(); // "stateId:districtName" -> id
+      for (const [stateName, districts] of stateDistricts.entries()) {
+        const stateId = stateMap.get(stateName)!;
+        for (const districtName of districts) {
+          const district = await prisma.district.upsert({
+            where: {
+              uq_state_district: {
+                stateId,
+                name: districtName
+              }
+            },
+            update: {},
+            create: {
+              stateId,
+              name: districtName
+            }
+          });
+          districtMap.set(`${stateId}:${districtName}`, district.id);
+        }
+      }
+
+      // --- OPTIMIZATION STEP 2: Pre-fetch Engineers ---
+      const dbEngineers = await prisma.engineer.findMany();
+      const engineerMap = new Map<string, string>(); // name.trim().toLowerCase() -> id
+      for (const eng of dbEngineers) {
+        engineerMap.set(eng.name.trim().toLowerCase(), eng.id);
+      }
+
+      // --- OPTIMIZATION STEP 3: Batch Data Arrays ---
+      const masterInstallations: any[] = [];
+      const complaints: any[] = [];
+      const tickets: any[] = [];
+      const ticketAssignments: any[] = [];
+      const initialVisits: any[] = [];
+      const serviceReports: any[] = [];
+      const materialRequests: any[] = [];
+      const materialRequestItems: any[] = [];
+      const ticketHistories: any[] = [];
+
       const processedInstallations = new Set<string>();
 
-      // 3. Process every row sequentially
+      const safeDate = (dStr?: string) => {
+        if (!dStr) return null;
+        const parsed = new Date(dStr.trim());
+        return isNaN(parsed.getTime()) ? null : parsed;
+      };
+
       for (let index = 0; index < dataRows.length; index++) {
         const row = dataRows[index];
-        const rowNumber = index + 2; // Row number in sheet (2-indexed)
+        const rowNumber = index + 2;
 
-        // Helper to extract column values
         const getVal = (colName: string) => {
           const idx = headers.indexOf(colName);
           return idx !== -1 ? row[idx] : "";
@@ -787,83 +864,51 @@ export const syncController = {
 
         if (!applicationId) continue;
 
-        // Ensure State exists
-        const state = await prisma.state.upsert({
-          where: { name: stateStr },
-          update: {},
-          create: { name: stateStr }
-        });
-
-        // Ensure District exists
-        const district = await prisma.district.upsert({
-          where: {
-            uq_state_district: {
-              stateId: state.id,
-              name: districtStr
-            }
-          },
-          update: {},
-          create: {
-            stateId: state.id,
-            name: districtStr
-          }
-        });
-
-        // Parse Safe Dates
-        const safeDate = (dStr?: string) => {
-          if (!dStr) return null;
-          const parsed = new Date(dStr.trim());
-          return isNaN(parsed.getTime()) ? null : parsed;
-        };
+        const stateId = stateMap.get(stateStr)!;
+        const districtId = districtMap.get(`${stateId}:${districtStr}`)!;
 
         const installationDate = safeDate(installationDateStr);
         const complaintDate = safeDate(complaintDateStr) || new Date();
 
-        // Create Master Installation if not already processed
+        // 1. Master Installation
         if (!processedInstallations.has(applicationId)) {
-          await prisma.masterInstallation.create({
-            data: {
-              applicationId,
-              clientName,
-              address: `${districtStr}, ${stateStr}`,
-              stateId: state.id,
-              districtId: district.id,
-              installationDate
-            }
+          masterInstallations.push({
+            applicationId,
+            clientName,
+            address: `${districtStr}, ${stateStr}`,
+            stateId,
+            districtId,
+            installationDate
           });
           processedInstallations.add(applicationId);
-          installationsCount++;
         }
 
-        // If no complaint date or ticket is present, it's just an AMC client without an active ticket
+        // Skip if no complaint date and no ticket ID
         if (!complaintDateStr && !ticketNumberStr) {
           continue;
         }
 
-        // Create Complaint
-        const complaint = await prisma.complaint.create({
-          data: {
-            formResponseId: rowNumber.toString(),
-            applicationId,
-            complainantName: clientName,
-            complainantPhone,
-            complaintType,
-            description,
-            submissionTimestamp: complaintDate,
-            syncStatus: "SYNCED"
-          }
+        // 2. Complaint
+        const complaintId = randomUUID();
+        complaints.push({
+          id: complaintId,
+          formResponseId: rowNumber.toString(),
+          applicationId,
+          complainantName: clientName,
+          complainantPhone,
+          complaintType,
+          description,
+          submissionTimestamp: complaintDate,
+          syncStatus: "SYNCED"
         });
 
-        // Find engineer matching name if provided
+        // Engineer lookup
         let engineerDbId = null;
         if (assignedEngineerName && assignedEngineerName !== "N/A" && assignedEngineerName.trim() !== "") {
-          const eng = await prisma.engineer.findFirst({
-            where: { name: { contains: assignedEngineerName.trim() } }
-          });
-          if (eng) engineerDbId = eng.id;
+          engineerDbId = engineerMap.get(assignedEngineerName.trim().toLowerCase()) || null;
         }
 
-        // Determine stage
+        // Stage
         let liveStage = "RECEIVED";
         if (serviceReportDateStr) {
           liveStage = "RESOLVED";
@@ -877,88 +922,96 @@ export const syncController = {
 
         const ticketNumber = ticketNumberStr || `CLR-${rowNumber}-${Date.now().toString().slice(-4)}`;
 
-        // Create Ticket
-        const ticket = await prisma.ticket.create({
-          data: {
-            ticketNumber,
-            complaintId: complaint.id,
-            status: liveStage,
-            priority: "STANDARD",
-            createdAt: complaintDate,
-            dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000)
-          }
+        // 3. Ticket
+        const ticketId = randomUUID();
+        tickets.push({
+          id: ticketId,
+          ticketNumber,
+          complaintId,
+          status: liveStage,
+          priority: "STANDARD",
+          createdAt: complaintDate,
+          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000)
         });
-        ticketsCount++;
 
-        // Assignment
+        // 4. Assignment
         if (engineerDbId) {
-          await prisma.ticketAssignment.create({
-            data: {
-              ticketId: ticket.id,
-              engineerId: engineerDbId,
-              assignedAt: complaintDate
-            }
+          ticketAssignments.push({
+            id: randomUUID(),
+            ticketId,
+            engineerId: engineerDbId,
+            assignedAt: complaintDate
           });
         }
 
-        // Initial Visit
+        // 5. Initial Visit
         if (initialVisitDateStr && engineerDbId) {
-          await prisma.initialVisit.create({
-            data: {
-              ticketId: ticket.id,
-              engineerId: engineerDbId,
-              visitDate: safeDate(initialVisitDateStr) || complaintDate,
-              remarks: "Completed diagnostic check on pump."
-            }
+          initialVisits.push({
+            id: randomUUID(),
+            ticketId,
+            engineerId: engineerDbId,
+            visitDate: safeDate(initialVisitDateStr) || complaintDate,
+            remarks: "Completed diagnostic check on pump."
           });
         }
 
-        // Service Report
+        // 6. Service Report
         if (serviceReportDateStr) {
-          await prisma.serviceReport.create({
-            data: {
-              ticketId: ticket.id,
-              reportDate: safeDate(serviceReportDateStr) || complaintDate,
-              workDone: "Inspected wiring and restored system operation.",
-              status: "COMPLETED"
-            }
+          serviceReports.push({
+            id: randomUUID(),
+            ticketId,
+            reportDate: safeDate(serviceReportDateStr) || complaintDate,
+            workDone: "Inspected wiring and restored system operation.",
+            status: "COMPLETED"
           });
         }
 
-        // Material Request
+        // 7. Material Request
         if (materialStatusStr && materialStatusStr !== "N/A" && engineerDbId) {
-          const matRequest = await prisma.materialRequest.create({
-            data: {
-              ticketId: ticket.id,
-              requestedBy: engineerDbId,
-              status: materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase(),
-              remarks: "Required solar components."
-            }
+          const materialRequestId = randomUUID();
+          materialRequests.push({
+            id: materialRequestId,
+            ticketId,
+            requestedBy: engineerDbId,
+            status: materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase(),
+            remarks: "Required solar components."
           });
-          await prisma.materialRequestItem.create({
-            data: {
-              materialRequestId: matRequest.id,
-              itemName: "Solar Pump Controller Card",
-              quantity: 1
-            }
+          materialRequestItems.push({
+            id: randomUUID(),
+            materialRequestId,
+            itemName: "Solar Pump Controller Card",
+            quantity: 1
           });
         }
 
-        // History Log
-        await prisma.ticketHistory.create({
-          data: {
-            ticketId: ticket.id,
-            newStatus: liveStage,
-            changeSummary: "Ticket synced from Google Sheets."
-          }
+        // 8. Ticket History
+        ticketHistories.push({
+          id: randomUUID(),
+          ticketId,
+          newStatus: liveStage,
+          changeSummary: "Ticket synced from Google Sheets."
         });
       }
 
-      console.log(`🎉 SUCCESS: Full Database Clean Sync completed. Installations: ${installationsCount}, Tickets: ${ticketsCount}`);
+      // --- OPTIMIZATION STEP 4: Write all processed batches ---
+      // We run these in a single Prisma transaction using createMany for maximum speed!
+      await prisma.$transaction([
+        prisma.masterInstallation.createMany({ data: masterInstallations }),
+        prisma.complaint.createMany({ data: complaints }),
+        prisma.ticket.createMany({ data: tickets }),
+        prisma.ticketAssignment.createMany({ data: ticketAssignments }),
+        prisma.initialVisit.createMany({ data: initialVisits }),
+        prisma.serviceReport.createMany({ data: serviceReports }),
+        prisma.materialRequest.createMany({ data: materialRequests }),
+        prisma.materialRequestItem.createMany({ data: materialRequestItems }),
+        prisma.ticketHistory.createMany({ data: ticketHistories })
+      ]);
+
+      console.log(`🎉 SUCCESS: Optimized Full Database Sync completed. Installations: ${masterInstallations.length}, Tickets: ${tickets.length}`);
       return res.status(200).json({
         detail: "Spreadsheet database sync complete!",
-        installationsCount,
-        ticketsCount
+        installationsCount: masterInstallations.length,
+        ticketsCount: tickets.length
       });
 
     } catch (err: any) {
