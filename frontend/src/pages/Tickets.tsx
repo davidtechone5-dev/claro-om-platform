@@ -10,33 +10,38 @@ export function Tickets() {
   const [statusFilter, setStatusFilter] = useState("ALL");
 
   useEffect(() => {
+    let active = true;
     async function fetchTickets() {
       try {
-        const data = await api.getTickets();
-        setTickets(data.tickets || []);
+        const data = await api.getTickets(
+          statusFilter,
+          undefined, // priority
+          searchTerm,
+          250 // limit to 250 rows for fast load times
+        );
+        if (active) {
+          setTickets(data.tickets || []);
+        }
       } catch (err) {
         console.error(err);
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
-    fetchTickets();
-  }, []);
+    
+    const timer = setTimeout(() => {
+      fetchTickets();
+    }, 300);
 
-  const filteredTickets = tickets.filter((t) => {
-    // 1. Search text mapping
-    const matchesSearch = 
-      t.ticketNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.complaint?.complainantName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.complaint?.applicationId.toLowerCase().includes(searchTerm.toLowerCase());
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [statusFilter, searchTerm]);
 
-    // 2. Status filter mapping
-    if (statusFilter === "ALL") return matchesSearch;
-    if (statusFilter === "OPEN") {
-      return matchesSearch && t.status !== "RESOLVED" && t.status !== "CLOSED";
-    }
-    return matchesSearch && t.status === statusFilter;
-  });
+  const filteredTickets = tickets;
 
   const statuses = [
     { key: "ALL", label: "All Tickets" },

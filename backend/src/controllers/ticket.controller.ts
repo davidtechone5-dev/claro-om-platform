@@ -8,14 +8,31 @@ export const ticketController = {
    * GET /api/v1/tickets
    */
   async listTickets(req: AuthenticatedRequest, res: Response) {
-    const { status, priority, limit = "20", offset = "0" } = req.query;
+    const { status, priority, limit = "20", offset = "0", search } = req.query;
 
     const whereClause: any = { deletedAt: null };
-    if (status) {
+    if (status && status.toString() !== "ALL") {
       whereClause.status = status.toString();
     }
     if (priority) {
       whereClause.priority = priority.toString();
+    }
+
+    if (search && search.toString().trim() !== "") {
+      const searchStr = search.toString().trim();
+      whereClause.OR = [
+        { ticketNumber: { contains: searchStr, mode: "insensitive" } },
+        {
+          complaint: {
+            complainantName: { contains: searchStr, mode: "insensitive" }
+          }
+        },
+        {
+          complaint: {
+            applicationId: { contains: searchStr, mode: "insensitive" }
+          }
+        }
+      ];
     }
 
     // Role-based constraints: State managers only see tickets matching their state
