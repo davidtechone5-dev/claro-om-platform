@@ -3,6 +3,27 @@ import { randomUUID } from "crypto";
 import { prisma } from "../db.js";
 import { assignmentService } from "../services/assignment.service.js";
 
+const normalizeStatus = (statusStr: string): string | null => {
+  const s = statusStr.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  if (s === "RECEIVED" || s === "RAISED" || s === "1TICKETRAISED" || s === "TICKETRAISED") return "RECEIVED";
+  if (s === "ASSIGNED" || s === "2ASSIGNED") return "ASSIGNED";
+  if (s === "VISITED" || s === "INITIALVISITCOMPLETED" || s === "3DIAGNOSTICCHECKED" || s === "DIAGNOSTICCHECKED") return "INITIAL_VISIT_COMPLETED";
+  if (s === "MATERIALREQ" || s === "MATERIALREQUESTED" || s === "4MATERIALREQUESTED") return "MATERIAL_REQUESTED";
+  if (s === "INSURANCE" || s === "INSURANCESUBMITTED" || s === "5INSURANCESUBMITTED" || s === "INSURANCECLAIMSUBMITTED") return "INSURANCE_SUBMITTED";
+  if (s === "RESOLVED" || s === "FULLYRESOLVED" || s === "6FULLYRESOLVED" || s === "CLOSED") return "RESOLVED";
+  if (s === "MANUALASSIGN" || s === "MANUALASSIGNMENTREQUIRED" || s === "NEEDSASSIGNMENT") return "MANUAL_ASSIGNMENT_REQUIRED";
+  return null;
+};
+
+const normalizePriority = (priorityStr: string): string | null => {
+  const p = priorityStr.trim().toUpperCase();
+  if (p === "CRITICAL") return "CRITICAL";
+  if (p === "URGENT") return "URGENT";
+  if (p === "STANDARD" || p === "NORMAL") return "STANDARD";
+  if (p === "LOW") return "LOW";
+  return null;
+};
+
 export const syncController = {
   /**
    * Sync Complaint Form Submissions
@@ -173,10 +194,10 @@ export const syncController = {
 
         let resolvedStatus = ticket.status;
 
-        // If Live Stage is explicitly set in the sheet payload, use it!
-        const validStages = ["RECEIVED", "ASSIGNED", "INITIAL_VISIT_COMPLETED", "MATERIAL_REQUESTED", "INSURANCE_SUBMITTED", "RESOLVED", "CLOSED", "MANUAL_ASSIGNMENT_REQUIRED"];
-        if (liveStageFromPayload && validStages.includes(liveStageFromPayload)) {
-          resolvedStatus = liveStageFromPayload;
+        // Normalize Live Stage dropdown value if present
+        const mappedStage = normalizeStatus(liveStageFromPayload);
+        if (mappedStage) {
+          resolvedStatus = mappedStage;
         } else {
           // Fall back to date-based status inference
           if (visitDate && engineerProfileId) {
@@ -239,9 +260,9 @@ export const syncController = {
 
         // Determine Priority from sheet dropdown
         let resolvedPriority = ticket.priority;
-        const validPriorities = ["CRITICAL", "URGENT", "STANDARD", "NORMAL", "LOW"];
-        if (priorityFromPayload && validPriorities.includes(priorityFromPayload)) {
-          resolvedPriority = priorityFromPayload === "NORMAL" ? "STANDARD" : priorityFromPayload;
+        const mappedPriority = normalizePriority(priorityFromPayload);
+        if (mappedPriority) {
+          resolvedPriority = mappedPriority;
         }
 
         // Update Ticket Status, Priority and Metadata
@@ -954,11 +975,11 @@ export const syncController = {
         }
 
         // Stage
-        const liveStageStr = getVal("Live Stage").trim().toUpperCase();
+        const liveStageStr = getVal("Live Stage");
         let liveStage = "RECEIVED";
-        const validStages = ["RECEIVED", "ASSIGNED", "INITIAL_VISIT_COMPLETED", "MATERIAL_REQUESTED", "INSURANCE_SUBMITTED", "RESOLVED", "CLOSED", "MANUAL_ASSIGNMENT_REQUIRED"];
-        if (liveStageStr && validStages.includes(liveStageStr)) {
-          liveStage = liveStageStr;
+        const mappedStage = normalizeStatus(liveStageStr);
+        if (mappedStage) {
+          liveStage = mappedStage;
         } else {
           if (serviceReportDateStr) {
             liveStage = "RESOLVED";
@@ -972,11 +993,11 @@ export const syncController = {
         }
 
         // Priority
-        const priorityStr = getVal("Priority").trim().toUpperCase();
+        const priorityStr = getVal("Priority");
         let priority = "STANDARD";
-        const validPriorities = ["CRITICAL", "URGENT", "STANDARD", "NORMAL", "LOW"];
-        if (priorityStr && validPriorities.includes(priorityStr)) {
-          priority = priorityStr === "NORMAL" ? "STANDARD" : priorityStr;
+        const mappedPriority = normalizePriority(priorityStr);
+        if (mappedPriority) {
+          priority = mappedPriority;
         }
 
         const ticketNumber = ticketNumberStr || `CLR-${rowNumber}-${Date.now().toString().slice(-4)}`;
