@@ -896,7 +896,6 @@ export const syncController = {
             data: {
               ticketId: ticket.id,
               engineerId: engineerDbId,
-              assignedBy: adminId,
               assignedAt: complaintDate
             }
           });
@@ -950,7 +949,6 @@ export const syncController = {
           data: {
             ticketId: ticket.id,
             newStatus: liveStage,
-            changedBy: adminId,
             changeSummary: "Ticket synced from Google Sheets."
           }
         });
