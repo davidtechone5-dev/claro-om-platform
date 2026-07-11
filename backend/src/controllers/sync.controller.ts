@@ -11,7 +11,7 @@ export const syncController = {
     const payload = req.body;
     const rowNumber = payload.__row_number || 0;
     const sheetName = payload.__sheet_name || "Complaint Form";
-    
+
     // Extract sheet parameters based on standard naming and trim whitespace
     const applicationId = (payload["Application ID"] || payload["application_id"])?.toString().trim();
     const complainantName = (payload["Customer Name"] || payload["Complainant Name"] || payload["Name"] || payload["complainant_name"] || "Unknown Client").toString().trim();
@@ -237,7 +237,7 @@ export const syncController = {
           });
         }
 
-        return res.status(200).json({ 
+        return res.status(200).json({
           ticketNumber: ticket.ticketNumber,
           detail: "Ticket updated successfully from Google Sheets."
         });
@@ -305,7 +305,7 @@ export const syncController = {
           where: { id: ticket.id },
           data: { status: finalStatus }
         });
-        
+
         await prisma.ticketHistory.create({
           data: {
             ticketId: ticket.id,
@@ -681,7 +681,7 @@ export const syncController = {
 
     try {
       console.log("🔄 Starting Full Database Clean Sync from Google Sheets...");
-      
+
       // 1. Fetch spreadsheet content as CSV
       const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv`;
       const fetchRes = await fetch(url);
@@ -689,7 +689,7 @@ export const syncController = {
         return res.status(502).json({ detail: `Failed to download spreadsheet: ${fetchRes.statusText}` });
       }
       const csvText = await fetchRes.text();
-      
+
       // Parse CSV
       const lines = csvText.split(/\r?\n/);
       const rows = lines
