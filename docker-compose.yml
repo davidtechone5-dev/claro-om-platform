@@ -26,8 +26,8 @@ services:
       - "3000:3000"
     environment:
       PORT: 3000
-      DATABASE_URL: postgresql://claro_user:claro_password@db:5432/claro_platform?schema=public
-      DIRECT_URL: postgresql://claro_user:claro_password@db:5432/claro_platform?schema=public
+      DATABASE_URL: "postgresql://postgres.ikisrnsvooaaniyeadhs:claro-today2026@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1"
+      DIRECT_URL: "postgresql://postgres.ikisrnsvooaaniyeadhs:claro-today2026@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
       JWT_SECRET: claro_super_secure_jwt_secret_key_2026
       JWT_EXPIRATION: 24h
       INTEGRATION_SECRET: claro_integration_secret_token_12345
