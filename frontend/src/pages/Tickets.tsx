@@ -8,19 +8,27 @@ export function Tickets() {
   const [tickets, setTickets] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  const limit = 25;
 
   useEffect(() => {
     let active = true;
     async function fetchTickets() {
+      setLoading(true);
       try {
+        const offset = (page - 1) * limit;
         const data = await api.getTickets(
           statusFilter,
           undefined, // priority
           searchTerm,
-          250 // limit to 250 rows for fast load times
+          limit,
+          offset
         );
         if (active) {
           setTickets(data.tickets || []);
+          setTotalCount(data.total || 0);
         }
       } catch (err) {
         console.error(err);
@@ -39,7 +47,17 @@ export function Tickets() {
       active = false;
       clearTimeout(timer);
     };
-  }, [statusFilter, searchTerm]);
+  }, [statusFilter, searchTerm, page]);
+
+  const handleFilterChange = (status: string) => {
+    setStatusFilter(status);
+    setPage(1);
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    setPage(1);
+  };
 
   const filteredTickets = tickets;
 
@@ -55,7 +73,7 @@ export function Tickets() {
     { key: "MANUAL_ASSIGNMENT_REQUIRED", label: "Manual Assign" }
   ];
 
-  if (loading) {
+  if (loading && tickets.length === 0) {
     return <div style={styles.loading}>Loading Tickets Registry...</div>;
   }
 
@@ -69,7 +87,7 @@ export function Tickets() {
           className="form-input"
           style={styles.searchBar}
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(e) => handleSearchChange(e.target.value)}
         />
       </div>
 
@@ -82,7 +100,7 @@ export function Tickets() {
               ...styles.filterBtn,
               ...(statusFilter === s.key ? styles.filterBtnActive : {})
             }}
-            onClick={() => setStatusFilter(s.key)}
+            onClick={() => handleFilterChange(s.key)}
           >
             {s.label}
           </button>
@@ -155,6 +173,29 @@ export function Tickets() {
           </table>
         </div>
       </div>
+
+      {/* Pagination Footer */}
+      <div style={styles.pagination}>
+        <button 
+          className="btn-secondary" 
+          disabled={page <= 1} 
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          style={styles.pageBtn}
+        >
+          Previous
+        </button>
+        <span style={styles.pageInfo}>
+          Page {page} of {Math.ceil(totalCount / limit) || 1} (Total: {totalCount} records)
+        </span>
+        <button 
+          className="btn-secondary" 
+          disabled={page >= (Math.ceil(totalCount / limit) || 1)} 
+          onClick={() => setPage(p => Math.min(Math.ceil(totalCount / limit) || 1, p + 1))}
+          style={styles.pageBtn}
+        >
+          Next
+        </button>
+      </div>
     </div>
   );
 }
@@ -205,5 +246,27 @@ const styles = {
     height: "6px",
     borderRadius: "50%",
     backgroundColor: "var(--accent)"
+  },
+  pagination: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: "1.5rem",
+    padding: "1rem 1.5rem",
+    backgroundColor: "var(--bg-secondary)",
+    border: "1px solid var(--border-color)",
+    borderRadius: "8px"
+  },
+  pageBtn: {
+    padding: "0.5rem 1rem",
+    fontSize: "0.85rem",
+    fontWeight: "600",
+    cursor: "pointer",
+    borderRadius: "6px"
+  },
+  pageInfo: {
+    color: "var(--text-muted)",
+    fontSize: "0.85rem",
+    fontFamily: "var(--font-mono)"
   }
 };

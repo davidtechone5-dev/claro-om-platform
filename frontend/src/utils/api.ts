@@ -22,8 +22,8 @@ export const api = {
   /**
    * Tickets endpoints
    */
-  async getTickets(status?: string, priority?: string, search?: string, limit: number = 200) {
-    let url = `${API_BASE_URL}/tickets?limit=${limit}`;
+  async getTickets(status?: string, priority?: string, search?: string, limit: number = 25, offset: number = 0) {
+    let url = `${API_BASE_URL}/tickets?limit=${limit}&offset=${offset}`;
     if (status && status !== "ALL") url += `&status=${encodeURIComponent(status)}`;
     if (priority) url += `&priority=${encodeURIComponent(priority)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
