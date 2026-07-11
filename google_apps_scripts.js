@@ -111,7 +111,7 @@ function getRowDataAsJSON(sheet, row, cellValues) {
   
   for (var i = 0; i < headers.length; i++) {
     var key = headers[i].toString().trim();
-    if (key !== "" && key !== "Sync Status" && key !== "Ticket ID" && key !== "Sync Error") {
+    if (key !== "" && key !== "Sync Status" && key !== "Sync Error") {
       payload[key] = rowValues[i];
     }
   }

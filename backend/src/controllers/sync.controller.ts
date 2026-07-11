@@ -14,11 +14,21 @@ export const syncController = {
     
     // Extract sheet parameters based on standard naming and trim whitespace
     const applicationId = (payload["Application ID"] || payload["application_id"])?.toString().trim();
-    const complainantName = (payload["Complainant Name"] || payload["Name"] || payload["complainant_name"] || "Unknown Client").toString().trim();
-    const complainantPhone = (payload["Complainant Phone"] || payload["Phone"] || payload["complainant_phone"] || "N/A").toString().trim();
-    const complaintType = (payload["Complaint Type"] || payload["complaint_type"] || "General").toString().trim();
+    const complainantName = (payload["Customer Name"] || payload["Complainant Name"] || payload["Name"] || payload["complainant_name"] || "Unknown Client").toString().trim();
+    const complainantPhone = (payload["Customer Phone"] || payload["Complainant Phone"] || payload["Phone"] || payload["complainant_phone"] || "N/A").toString().trim();
+    const complaintType = (payload["Issue Type"] || payload["Complaint Type"] || payload["complaint_type"] || "General").toString().trim();
     const description = (payload["Description"] || payload["description"] || "").toString().trim();
+    const ticketNumberFromPayload = (payload["Ticket ID"] || payload["ticket_number"] || "")?.toString().trim();
+    const assignedEngineerName = (payload["Assigned Engineer Name"] || payload["Engineer assigned"] || "").toString().trim();
+    const engineerEmail = (payload["Engineer Email"] || "").toString().trim();
+    const engineerPhone = (payload["Engineer Phone"] || "").toString().trim();
+    const initialVisitDateStr = (payload["Initial Visit Date"] || "").toString().trim();
+    const serviceReportDateStr = (payload["Service Report Date"] || "").toString().trim();
+    const materialStatusStr = (payload["Material Status"] || "").toString().trim();
     const timestampStr = payload["Timestamp"] || new Date().toISOString();
+
+    console.log("📥 Incoming webhook payload keys:", Object.keys(payload));
+    console.log(`📥 Row: ${rowNumber} | Application ID: '${applicationId}' | Ticket ID from payload: '${ticketNumberFromPayload}'`);
 
     if (!applicationId) {
       const errorMsg = "Missing required parameter 'Application ID'";
@@ -43,7 +53,16 @@ export const syncController = {
       }
 
       // 1.5. Prevent duplicate ticket logs if this row was already synced
-      const existingComplaint = await prisma.complaint.findFirst({
+      // Or if the Ticket ID is already present in the sheet and exists in the DB
+      let existingTicket = null;
+      if (ticketNumberFromPayload) {
+        existingTicket = await prisma.ticket.findUnique({
+          where: { ticketNumber: ticketNumberFromPayload },
+          include: { complaint: { include: { tickets: true } } }
+        });
+      }
+
+      const existingComplaint = existingTicket?.complaint || await prisma.complaint.findFirst({
         where: {
           formResponseId: rowNumber.toString(),
           applicationId
@@ -52,6 +71,9 @@ export const syncController = {
           tickets: true
         }
       });
+
+      console.log(`🔍 Lookup Result - existingTicket:`, existingTicket ? existingTicket.ticketNumber : 'null');
+      console.log(`🔍 Lookup Result - existingComplaint found:`, existingComplaint ? 'YES' : 'NO');
 
       if (existingComplaint && existingComplaint.tickets.length > 0) {
         // Update the existing complaint with new details from the sheet
@@ -66,8 +88,143 @@ export const syncController = {
           }
         });
 
+        const ticket = existingComplaint.tickets[0];
+
+        // Retrieve default Admin user for assignments reference
+        const adminUser = await prisma.user.findFirst({
+          where: { role: { name: "Admin" } }
+        });
+        const adminId = adminUser ? adminUser.id : "admin-default-id";
+
+        // Update Engineer Assignment if changed
+        let engineerProfileId: string | null = null;
+
+        if (assignedEngineerName && engineerEmail) {
+          const engineer = await prisma.engineer.upsert({
+            where: { email: engineerEmail },
+            update: { name: assignedEngineerName, phone: engineerPhone },
+            create: { name: assignedEngineerName, email: engineerEmail, phone: engineerPhone }
+          });
+          engineerProfileId = engineer.id;
+
+          // Re-create cleanly
+          await prisma.ticketAssignment.deleteMany({
+            where: { ticketId: ticket.id }
+          });
+
+          await prisma.ticketAssignment.create({
+            data: {
+              ticketId: ticket.id,
+              engineerId: engineer.id,
+              assignedBy: adminId,
+              assignedAt: new Date()
+            }
+          });
+
+          // Check if the ticket should move status to ASSIGNED if currently RECEIVED
+          if (ticket.status === "RECEIVED") {
+            await prisma.ticket.update({
+              where: { id: ticket.id },
+              data: { status: "ASSIGNED" }
+            });
+          }
+        } else if (!assignedEngineerName || assignedEngineerName === "N/A" || assignedEngineerName === "") {
+          // If engineer details cleared, wipe current assignments
+          await prisma.ticketAssignment.deleteMany({
+            where: { ticketId: ticket.id }
+          });
+        } else {
+          // Retrieve currently assigned engineer if not updating
+          const currentAssignment = await prisma.ticketAssignment.findFirst({
+            where: { ticketId: ticket.id }
+          });
+          if (currentAssignment) {
+            engineerProfileId = currentAssignment.engineerId;
+          }
+        }
+
+        // Helper to parse dates safely
+        const parseSafeDate = (dStr: string) => {
+          if (!dStr) return null;
+          const parsed = new Date(dStr);
+          return isNaN(parsed.getTime()) ? null : parsed;
+        };
+
+        const visitDate = parseSafeDate(initialVisitDateStr);
+        const reportDate = parseSafeDate(serviceReportDateStr);
+
+        let resolvedStatus = ticket.status;
+
+        // 1. Update Initial Visit if provided
+        if (visitDate && engineerProfileId) {
+          await prisma.initialVisit.deleteMany({
+            where: { ticketId: ticket.id }
+          });
+          await prisma.initialVisit.create({
+            data: {
+              ticketId: ticket.id,
+              engineerId: engineerProfileId,
+              visitDate,
+              remarks: "Completed diagnostic check."
+            }
+          });
+          if (resolvedStatus === "ASSIGNED" || resolvedStatus === "RECEIVED") {
+            resolvedStatus = "INITIAL_VISIT_COMPLETED";
+          }
+        }
+
+        // 2. Update Material Request if status changed
+        if (materialStatusStr && materialStatusStr !== "N/A" && engineerProfileId) {
+          const statusVal = materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase();
+          await prisma.materialRequest.deleteMany({
+            where: { ticketId: ticket.id }
+          });
+          const matRequest = await prisma.materialRequest.create({
+            data: {
+              ticketId: ticket.id,
+              requestedBy: engineerProfileId,
+              status: statusVal,
+              remarks: "Required solar components."
+            }
+          });
+          await prisma.materialRequestItem.create({
+            data: {
+              materialRequestId: matRequest.id,
+              itemName: "Solar Pump Controller Card",
+              quantity: 1
+            }
+          });
+          if (resolvedStatus !== "RESOLVED") {
+            resolvedStatus = "MATERIAL_REQUESTED";
+          }
+        }
+
+        // 3. Update Service Report if resolution date provided
+        if (reportDate) {
+          await prisma.serviceReport.deleteMany({
+            where: { ticketId: ticket.id }
+          });
+          await prisma.serviceReport.create({
+            data: {
+              ticketId: ticket.id,
+              reportDate,
+              workDone: "Inspected wiring and restored system operation.",
+              status: "COMPLETED"
+            }
+          });
+          resolvedStatus = "RESOLVED";
+        }
+
+        // Update Ticket Status if changed
+        if (resolvedStatus !== ticket.status) {
+          await prisma.ticket.update({
+            where: { id: ticket.id },
+            data: { status: resolvedStatus }
+          });
+        }
+
         return res.status(200).json({ 
-          ticketNumber: existingComplaint.tickets[0].ticketNumber,
+          ticketNumber: ticket.ticketNumber,
           detail: "Ticket updated successfully from Google Sheets."
         });
       }
