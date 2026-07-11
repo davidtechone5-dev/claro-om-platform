@@ -63,7 +63,6 @@ export function Tickets() {
 
   const statuses = [
     { key: "ALL", label: "All Tickets" },
-    { key: "OPEN", label: "Active" },
     { key: "RECEIVED", label: "Received" },
     { key: "ASSIGNED", label: "Assigned" },
     { key: "INITIAL_VISIT_COMPLETED", label: "Visited" },
