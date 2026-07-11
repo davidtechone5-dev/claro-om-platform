@@ -4,7 +4,7 @@
   "description": "Backend API for Claro O&M Platform V2 built with Express.js, TypeScript, and Prisma ORM",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "prisma:generate": "prisma generate",
