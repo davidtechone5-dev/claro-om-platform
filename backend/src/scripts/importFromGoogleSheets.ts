@@ -166,6 +166,14 @@ async function run() {
         continue;
       }
 
+      // Skip duplicate ticket numbers to prevent constraint failure crashes
+      const existingTicket = await prisma.ticket.findUnique({
+        where: { ticketNumber: ticketId }
+      });
+      if (existingTicket) {
+        continue;
+      }
+
       // 1. Upsert State and District
       const state = await prisma.state.upsert({
         where: { name: stateName },
