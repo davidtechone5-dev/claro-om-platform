@@ -19,6 +19,27 @@ export const api = {
     return await res.json();
   },
 
+  async login(email: string, password: string) {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Invalid login credentials.");
+    }
+    return await res.json();
+  },
+
+  async me() {
+    const res = await fetch(`${API_BASE_URL}/auth/me`, { headers: getHeaders() });
+    if (!res.ok) {
+      throw new Error("Failed to load user profile");
+    }
+    return await res.json();
+  },
+
   /**
    * Tickets endpoints
    */
@@ -78,6 +99,14 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/engineers`, { headers: getHeaders() });
     if (!res.ok) {
       throw new Error(`Failed to fetch engineers: ${res.statusText}`);
+    }
+    return await res.json();
+  },
+
+  async getEngineerPerformance(engineerId: string) {
+    const res = await fetch(`${API_BASE_URL}/engineers/${engineerId}/performance`, { headers: getHeaders() });
+    if (!res.ok) {
+      throw new Error("Failed to fetch engineer performance metrics");
     }
     return await res.json();
   },

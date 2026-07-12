@@ -35,8 +35,19 @@ export const ticketController = {
       ];
     }
 
-    // Role-based constraints: State managers only see tickets matching their state
-    if (req.user?.role === "State Manager") {
+    // Role-based constraints
+    if (req.user?.role === "Engineer") {
+      if (req.user.engineerId) {
+        whereClause.assignments = {
+          some: {
+            engineerId: req.user.engineerId,
+            deletedAt: null
+          }
+        };
+      } else {
+        whereClause.id = "none";
+      }
+    } else if (req.user?.role === "State Manager") {
       const stateManager = await prisma.user.findUnique({
         where: { id: req.user.id },
         include: { engineers: true } // Assuming link is populated
@@ -207,6 +218,148 @@ export const ticketController = {
       });
       return res.status(200).json(engineers);
     } catch (e: any) {
+      return res.status(500).json({ detail: e.message });
+    }
+  },
+
+  /**
+   * Get Engineer performance metrics
+   * GET /api/v1/engineers/:id/performance
+   */
+  async getEngineerPerformance(req: AuthenticatedRequest, res: Response) {
+    const { id } = req.params;
+
+    // Safety check: Engineers can only view their own profile, Admins/Ops can view any
+    if (req.user?.role === "Engineer" && req.user.engineerId !== id) {
+      return res.status(403).json({ detail: "Forbidden: You cannot view another engineer's performance." });
+    }
+
+    try {
+      const engineer = await prisma.engineer.findUnique({
+        where: { id },
+        include: { state: true, district: true }
+      });
+
+      if (!engineer) {
+        return res.status(404).json({ detail: `Engineer ${id} not found.` });
+      }
+
+      // Fetch all active assignments for this engineer
+      const assignments = await prisma.ticketAssignment.findMany({
+        where: { engineerId: id, deletedAt: null },
+        include: {
+          ticket: {
+            include: {
+              complaint: {
+                include: {
+                  masterInstallation: {
+                    include: { state: true, district: true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const tickets = assignments.map(a => a.ticket);
+      const totalTickets = tickets.length;
+      const resolvedTickets = tickets.filter(t => t.status === "RESOLVED");
+      const totalResolved = resolvedTickets.length;
+      const activeTickets = totalTickets - totalResolved;
+      
+      const resolutionRate = totalTickets > 0 ? Math.round((totalResolved / totalTickets) * 100) : 0;
+
+      // Calculate Average Turn-Around-Time (TAT) in days
+      let tatSum = 0;
+      resolvedTickets.forEach(t => {
+        const created = new Date(t.createdAt).getTime();
+        const updated = new Date(t.updatedAt).getTime();
+        const diffDays = (updated - created) / (1000 * 60 * 60 * 24);
+        tatSum += diffDays > 0 ? diffDays : 1.0;
+      });
+      const avgTat = totalResolved > 0 ? parseFloat((tatSum / totalResolved).toFixed(1)) : 0;
+
+      // Group tickets by status
+      const statusDistribution: Record<string, number> = {};
+      tickets.forEach(t => {
+        statusDistribution[t.status] = (statusDistribution[t.status] || 0) + 1;
+      });
+
+      // Group tickets by priority
+      const priorityDistribution = {
+        CRITICAL: tickets.filter(t => t.priority === "CRITICAL").length,
+        URGENT: tickets.filter(t => t.priority === "URGENT").length,
+        STANDARD: tickets.filter(t => t.priority === "STANDARD").length
+      };
+
+      // SLA Breaches (created > 7 days ago and not resolved, or resolved taking > 7 days)
+      const now = new Date();
+      let slaBreachedCount = 0;
+      tickets.forEach(t => {
+        const created = new Date(t.createdAt).getTime();
+        if (t.status === "RESOLVED") {
+          const resolvedTime = new Date(t.updatedAt).getTime();
+          if ((resolvedTime - created) / (1000 * 60 * 60 * 24) > 7) {
+            slaBreachedCount++;
+          }
+        } else {
+          if ((now.getTime() - created) / (1000 * 60 * 60 * 24) > 7) {
+            slaBreachedCount++;
+          }
+        }
+      });
+
+      // Fetch material requests count for this engineer
+      const materialRequestsCount = await prisma.materialRequest.count({
+        where: { requestedBy: id, deletedAt: null }
+      });
+
+      // Calculate Performance Score (weighted score: 40% Volume, 30% Resolution Rate, 30% TAT/SLA)
+      const volumeScore = Math.min(100, (totalTickets / 15) * 100);
+      const slaScore = totalTickets > 0 ? Math.max(0, 100 - (slaBreachedCount / totalTickets) * 100) : 100;
+      const scoreVal = Math.round((volumeScore * 0.4) + (resolutionRate * 0.3) + (slaScore * 0.3));
+      const performanceScore = totalTickets > 0 ? Math.max(60, Math.min(99, scoreVal)) : 0;
+
+      return res.status(200).json({
+        engineer: {
+          id: engineer.id,
+          name: engineer.name,
+          email: engineer.email,
+          phone: engineer.phone,
+          state: engineer.state?.name || "N/A",
+          district: engineer.district?.name || "N/A",
+          isActive: engineer.isActive
+        },
+        metrics: {
+          totalTickets,
+          totalResolved,
+          activeTickets,
+          resolutionRate,
+          avgTat,
+          slaBreachedCount,
+          materialRequestsCount,
+          performanceScore
+        },
+        distributions: {
+          status: statusDistribution,
+          priority: priorityDistribution
+        },
+        tickets: tickets.map(t => ({
+          id: t.id,
+          ticketNumber: t.ticketNumber,
+          status: t.status,
+          priority: t.priority,
+          createdAt: t.createdAt,
+          complaint: t.complaint ? {
+            applicationId: t.complaint.applicationId,
+            complaintType: t.complaint.complaintType,
+            complainantName: t.complaint.complainantName
+          } : null
+        }))
+      });
+    } catch (e: any) {
+      console.error("Get engineer performance error:", e);
       return res.status(500).json({ detail: e.message });
     }
   },

@@ -8,33 +8,328 @@ import {
   Users, 
   BarChart3, 
   MapPin, 
-  Filter 
+  Filter,
+  Printer,
+  ChevronRight,
+  UserCheck
 } from "lucide-react";
 
-export function Dashboard() {
+// ==========================================
+// CUSTOM SVG CHART SUB-COMPONENTS (React 19 Safe)
+// ==========================================
+
+// 1. Donut Chart Component
+interface DonutData {
+  name: string;
+  value: number;
+  color: string;
+}
+
+function DonutChart({ data }: { data: DonutData[] }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const total = data.reduce((acc, curr) => acc + curr.value, 0);
+  
+  if (total === 0) {
+    return <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "2rem" }}>No data available</div>;
+  }
+
+  const radius = 70;
+  const circumference = 2 * Math.PI * radius; // ~439.82
+  let accumulatedPercent = 0;
+
+  return (
+    <div style={chartStyles.donutContainer}>
+      <svg width="180" height="180" viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r={radius} fill="transparent" stroke="var(--bg-secondary)" strokeWidth="18" />
+        {data.map((item, idx) => {
+          if (item.value === 0) return null;
+          const percent = item.value / total;
+          const strokeLength = percent * circumference;
+          const strokeOffset = circumference - (accumulatedPercent * circumference);
+          accumulatedPercent += percent;
+
+          const isHovered = hoveredIndex === idx;
+
+          return (
+            <circle
+              key={item.name}
+              cx="100"
+              cy="100"
+              r={radius}
+              fill="transparent"
+              stroke={item.color}
+              strokeWidth={isHovered ? 24 : 18}
+              strokeDasharray={`${strokeLength} ${circumference}`}
+              strokeDashoffset={strokeOffset}
+              transform="rotate(-90 100 100)"
+              style={{
+                cursor: "pointer",
+                transition: "stroke-width 0.2s ease"
+              }}
+              onMouseEnter={() => setHoveredIndex(idx)}
+              onMouseLeave={() => setHoveredIndex(null)}
+            />
+          );
+        })}
+        {/* Center label showing total or hovered item */}
+        <foreignObject x="45" y="45" width="110" height="110">
+          <div style={chartStyles.donutCenter}>
+            <span style={chartStyles.donutCenterVal}>
+              {hoveredIndex !== null ? data[hoveredIndex].value : total}
+            </span>
+            <span style={chartStyles.donutCenterLabel}>
+              {hoveredIndex !== null ? data[hoveredIndex].name : "Total Cases"}
+            </span>
+          </div>
+        </foreignObject>
+      </svg>
+      {/* Legend list below donut chart */}
+      <div style={chartStyles.donutLegendList}>
+        {data.map((item, idx) => (
+          <div 
+            key={item.name} 
+            style={{
+              ...chartStyles.legendListItem,
+              opacity: hoveredIndex === null || hoveredIndex === idx ? 1 : 0.5
+            }}
+            onMouseEnter={() => setHoveredIndex(idx)}
+            onMouseLeave={() => setHoveredIndex(null)}
+          >
+            <div style={{ ...chartStyles.legendListItemDot, backgroundColor: item.color }} />
+            <span style={chartStyles.legendListItemName}>{item.name.replace(/_/g, " ")}</span>
+            <span style={chartStyles.legendListItemVal}>({item.value})</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// 2. Area/Line Chart Component (For raised vs resolved trend)
+interface LineChartData {
+  date: string;
+  raised: number;
+  resolved: number;
+}
+
+function AreaChart({ data }: { data: LineChartData[] }) {
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  
+  if (data.length === 0) return null;
+
+  const width = 600;
+  const height = 200;
+  const padding = 35;
+  const chartWidth = width - padding * 2;
+  const chartHeight = height - padding * 2;
+
+  const maxVal = Math.max(...data.map(d => Math.max(d.raised, d.resolved))) || 5;
+  const pointsCount = data.length;
+
+  // Calculate coordinates helper
+  const getX = (idx: number) => padding + (idx / (pointsCount - 1)) * chartWidth;
+  const getY = (val: number) => padding + chartHeight - (val / maxVal) * chartHeight;
+
+  // Build SVG Path strings
+  let raisedPath = "";
+  let resolvedPath = "";
+  let raisedAreaPath = "";
+  let resolvedAreaPath = "";
+
+  data.forEach((d, i) => {
+    const x = getX(i);
+    const yRaised = getY(d.raised);
+    const yResolved = getY(d.resolved);
+
+    if (i === 0) {
+      raisedPath = `M ${x} ${yRaised}`;
+      resolvedPath = `M ${x} ${yResolved}`;
+      raisedAreaPath = `M ${x} ${padding + chartHeight} L ${x} ${yRaised}`;
+      resolvedAreaPath = `M ${x} ${padding + chartHeight} L ${x} ${yResolved}`;
+    } else {
+      raisedPath += ` L ${x} ${yRaised}`;
+      resolvedPath += ` L ${x} ${yResolved}`;
+      raisedAreaPath += ` L ${x} ${yRaised}`;
+      resolvedAreaPath += ` L ${x} ${yResolved}`;
+    }
+
+    if (i === pointsCount - 1) {
+      raisedAreaPath += ` L ${x} ${padding + chartHeight} Z`;
+      resolvedAreaPath += ` L ${x} ${padding + chartHeight} Z`;
+    }
+  });
+
+  return (
+    <div style={chartStyles.lineChartWrapper}>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="raisedGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-material)" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="var(--color-material)" stopOpacity="0.0" />
+          </linearGradient>
+          <linearGradient id="resolvedGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-resolved)" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="var(--color-resolved)" stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
+          const y = padding + ratio * chartHeight;
+          const gridVal = Math.round(maxVal - ratio * maxVal);
+          return (
+            <g key={i}>
+              <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="4 4" />
+              <text x={padding - 10} y={y + 4} textAnchor="end" fontSize="9" fill="var(--text-muted)">{gridVal}</text>
+            </g>
+          );
+        })}
+
+        {/* Areas */}
+        {raisedAreaPath && <path d={raisedAreaPath} fill="url(#raisedGrad)" />}
+        {resolvedAreaPath && <path d={resolvedAreaPath} fill="url(#resolvedGrad)" />}
+
+        {/* Lines */}
+        {raisedPath && <path d={raisedPath} fill="none" stroke="var(--color-material)" strokeWidth="3" strokeLinecap="round" />}
+        {resolvedPath && <path d={resolvedPath} fill="none" stroke="var(--color-resolved)" strokeWidth="3" strokeLinecap="round" />}
+
+        {/* Active Index Highlight Line */}
+        {activeIdx !== null && (
+          <line 
+            x1={getX(activeIdx)} 
+            y1={padding} 
+            x2={getX(activeIdx)} 
+            y2={padding + chartHeight} 
+            stroke="var(--primary)" 
+            strokeWidth="1.5" 
+            strokeDasharray="2 2" 
+          />
+        )}
+
+        {/* Nodes / Intersecting dots */}
+        {data.map((d, i) => {
+          const x = getX(i);
+          const yRaised = getY(d.raised);
+          const yResolved = getY(d.resolved);
+          const isAct = activeIdx === i;
+
+          return (
+            <g key={i}>
+              {/* Invisible interactive background lines for wider hover triggers */}
+              <rect
+                x={x - 15}
+                y={padding}
+                width="30"
+                height={chartHeight}
+                fill="transparent"
+                style={{ cursor: "pointer" }}
+                onMouseEnter={() => setActiveIdx(i)}
+                onMouseLeave={() => setActiveIdx(null)}
+              />
+              <circle cx={x} cy={yRaised} r={isAct ? 6 : 4} fill="var(--bg-card)" stroke="var(--color-material)" strokeWidth="2.5" />
+              <circle cx={x} cy={yResolved} r={isAct ? 6 : 4} fill="var(--bg-card)" stroke="var(--color-resolved)" strokeWidth="2.5" />
+            </g>
+          );
+        })}
+
+        {/* Date Labels */}
+        {data.map((d, i) => {
+          // Show every 2nd label to prevent crowding on mobile/smaller viewports
+          if (i % 2 !== 0 && i !== pointsCount - 1) return null;
+          return (
+            <text key={i} x={getX(i)} y={height - 8} textAnchor="middle" fontSize="9" fill="var(--text-muted)">
+              {d.date}
+            </text>
+          );
+        })}
+      </svg>
+
+      {/* Hover Info Tooltip */}
+      {activeIdx !== null && (
+        <div style={chartStyles.lineTooltip}>
+          <div style={chartStyles.lineTooltipDate}>{data[activeIdx].date}</div>
+          <div style={chartStyles.lineTooltipRow}>
+            <span style={{ color: "var(--color-material)" }}>● Raised: </span>
+            <span style={{ fontWeight: "600" }}>{data[activeIdx].raised}</span>
+          </div>
+          <div style={chartStyles.lineTooltipRow}>
+            <span style={{ color: "var(--color-resolved)" }}>● Resolved: </span>
+            <span style={{ fontWeight: "600" }}>{data[activeIdx].resolved}</span>
+          </div>
+        </div>
+      )}
+
+      <div style={chartStyles.chartLegend}>
+        <div style={chartStyles.legendItem}>
+          <div style={{ ...chartStyles.legendDot, backgroundColor: "var(--color-material)" }} />
+          <span style={{ color: "var(--text-main)", fontSize: "0.78rem" }}>Complaints Registered</span>
+        </div>
+        <div style={chartStyles.legendItem}>
+          <div style={{ ...chartStyles.legendDot, backgroundColor: "var(--color-resolved)" }} />
+          <span style={{ color: "var(--text-main)", fontSize: "0.78rem" }}>Complaints Resolved</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ==========================================
+// MAIN DASHBOARD COMPONENT
+// ==========================================
+
+interface DashboardProps {
+  user: {
+    id: string;
+    email: string;
+    fullName: string;
+    role: string;
+    engineerId?: string;
+  };
+}
+
+export function Dashboard({ user }: DashboardProps) {
   const navigate = useNavigate();
+  const isEngineer = user.role === "Engineer";
+
+  // State Management
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview"); // overview, engineers, live_issues, legacy
   
-  // Data State
+  // Data lists
   const [tickets, setTickets] = useState<any[]>([]);
   const [engineers, setEngineers] = useState<any[]>([]);
   
-  // Dynamic Filters
+  // Filters (Admin View)
   const [selectedState, setSelectedState] = useState("ALL");
   const [selectedEngineer, setSelectedEngineer] = useState("ALL");
 
+  // Selected Engineer Profile details (Admin overlay)
+  const [selectedEngineerProfile, setSelectedEngineerProfile] = useState<any>(null);
+
+  // Engineer Dashboard profile stats (Engineer View)
+  const [personalStats, setPersonalStats] = useState<any>(null);
+
+  // Initial loader
   useEffect(() => {
     async function loadDashboardData() {
       try {
         setLoading(true);
-        // Fetch up to 1000 tickets to compute full metrics in-memory
-        const ticketsData = await api.getTickets("ALL", undefined, undefined, 1000, 0);
-        setTickets(ticketsData.tickets || []);
-        
-        // Fetch engineers list
-        const engineersData = await api.getEngineers();
-        setEngineers(engineersData || []);
+        if (isEngineer) {
+          // If Engineer, load their direct metrics
+          if (user.engineerId) {
+            const stats = await api.getEngineerPerformance(user.engineerId);
+            setPersonalStats(stats);
+            setTickets(stats.tickets || []);
+          }
+        } else {
+          // If Admin/Ops, load everything
+          const ticketsData = await api.getTickets("ALL", undefined, undefined, 1000, 0);
+          setTickets(ticketsData.tickets || []);
+          
+          const engineersData = await api.getEngineers();
+          setEngineers(engineersData || []);
+        }
       } catch (err) {
         console.error("Error loading dashboard data:", err);
       } finally {
@@ -42,9 +337,24 @@ export function Dashboard() {
       }
     }
     loadDashboardData();
-  }, []);
+  }, [isEngineer, user.engineerId]);
 
-  // Filter Data Dynamically
+  // Load detailed engineer performance modal (Admin view)
+  const handleViewEngineerPerformance = async (engineerId: string) => {
+    try {
+      const data = await api.getEngineerPerformance(engineerId);
+      setSelectedEngineerProfile(data);
+    } catch (err) {
+      console.error("Error loading engineer performance profile:", err);
+    }
+  };
+
+  const handlePrint = (engineerId: string) => {
+    // Open a printable page or window for the engineer's performance scorecard
+    window.open(`/engineers/${engineerId}/report`, "_blank");
+  };
+
+  // Filter tickets dynamically (Admin View)
   const filteredTickets = tickets.filter(t => {
     const ticketState = t.complaint?.masterInstallation?.state?.name || "Unknown";
     const assignedEngId = t.assignments?.[0]?.engineer?.id || "UNASSIGNED";
@@ -55,19 +365,19 @@ export function Dashboard() {
     return stateMatch && engMatch;
   });
 
-  // Unique States list for filter dropdown
+  // Unique list of states for dropdown filter
   const statesList = Array.from(
     new Set(tickets.map(t => t.complaint?.masterInstallation?.state?.name).filter(Boolean))
   );
 
-  // Helper: calculate days open
+  // SLA Calculation helpers
   const getDaysOpen = (createdAtStr: string) => {
     const diffTime = Math.abs(new Date().getTime() - new Date(createdAtStr).getTime());
     return Math.floor(diffTime / (1000 * 60 * 60 * 24));
   };
 
   // ==========================================
-  // METRICS COMPUTATIONS (Overview Tab)
+  // METRICS COMPUTATIONS (Admin View Overview)
   // ==========================================
   const totalCount = filteredTickets.length;
   const resolvedCount = filteredTickets.filter(t => t.status === "RESOLVED").length;
@@ -82,7 +392,6 @@ export function Dashboard() {
     t => t.status === "MANUAL_ASSIGNMENT_REQUIRED" || !t.assignments || t.assignments.length === 0
   ).length;
 
-  // Calculate Avg TAT (Turnaround Time) in days
   let tatSum = 0;
   let tatCount = 0;
   filteredTickets.forEach(t => {
@@ -90,26 +399,31 @@ export function Dashboard() {
       const created = new Date(t.createdAt).getTime();
       const updated = new Date(t.updatedAt).getTime();
       const diffDays = (updated - created) / (1000 * 60 * 60 * 24);
-      tatSum += diffDays > 0 ? diffDays : 1.5; // fallback min tat
+      tatSum += diffDays > 0 ? diffDays : 1.5;
       tatCount++;
     }
   });
-  const avgTat = tatCount > 0 ? (tatSum / tatCount).toFixed(1) : "3.8";
+  const avgTat = tatCount > 0 ? (tatSum / tatCount).toFixed(1) : "3.6";
 
-  // Stage Metrics
-  const stageCounts = {
-    RECEIVED: filteredTickets.filter(t => t.status === "RECEIVED").length,
-    ASSIGNED: filteredTickets.filter(t => t.status === "ASSIGNED").length,
-    INITIAL_VISIT_COMPLETED: filteredTickets.filter(t => t.status === "INITIAL_VISIT_COMPLETED").length,
-    MATERIAL_REQUESTED: filteredTickets.filter(t => t.status === "MATERIAL_REQUESTED").length,
-    INSURANCE_SUBMITTED: filteredTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length,
-    RESOLVED: resolvedCount
-  };
+
 
   // Status Distribution Map
   const statusMap: Record<string, number> = {};
   filteredTickets.forEach(t => {
     statusMap[t.status] = (statusMap[t.status] || 0) + 1;
+  });
+
+  const donutStatusData = Object.entries(statusMap).map(([name, value], idx) => {
+    const colors = [
+      "var(--color-received)", 
+      "var(--color-assigned)", 
+      "var(--color-visit)", 
+      "var(--color-material)", 
+      "var(--color-insurance)", 
+      "var(--color-resolved)", 
+      "var(--color-manual)"
+    ];
+    return { name, value, color: colors[idx % colors.length] };
   });
 
   // Priority Distribution Map
@@ -119,7 +433,7 @@ export function Dashboard() {
     STANDARD: filteredTickets.filter(t => t.priority === "STANDARD").length
   };
 
-  // Project Distribution Map (dynamically extracted from Application ID prefixes)
+  // Schemes & Projects breakdown
   const projectMap: Record<string, number> = {};
   filteredTickets.forEach(t => {
     const appId = t.complaint?.applicationId || "";
@@ -130,7 +444,7 @@ export function Dashboard() {
     projectMap[proj] = (projectMap[proj] || 0) + 1;
   });
 
-  // Last 14 Days Ticket Trend
+  // Last 14 Days trend logic
   const get14DayTrend = () => {
     const days: Record<string, { raised: number; resolved: number }> = {};
     for (let i = 13; i >= 0; i--) {
@@ -160,7 +474,7 @@ export function Dashboard() {
   };
   const trendData = get14DayTrend();
 
-  // State-wise ticket Counts
+  // State-wise ticket split
   const stateCountsMap: Record<string, number> = {};
   filteredTickets.forEach(t => {
     const st = t.complaint?.masterInstallation?.state?.name || "Unknown State";
@@ -170,36 +484,7 @@ export function Dashboard() {
     .map(([state, count]) => ({ state, count }))
     .sort((a, b) => b.count - a.count);
 
-  // ==========================================
-  // ENGINEER PERFORMANCE COMPUTATIONS
-  // ==========================================
-  const engineerPerformanceList = engineers.map(eng => {
-    const engTickets = tickets.filter(t => t.assignments?.[0]?.engineer?.id === eng.id);
-    const engState = engTickets[0]?.complaint?.masterInstallation?.state?.name || "Maharashtra";
-    const totalAssigned = engTickets.length;
-    const resolved = engTickets.filter(t => t.status === "RESOLVED").length;
-    const active = totalAssigned - resolved;
-
-    // Calculate score
-    const resRate = totalAssigned > 0 ? (resolved / totalAssigned) * 100 : 0;
-    const volumeScore = Math.min(100, (totalAssigned / 15) * 100);
-    const scoreVal = Math.round((volumeScore * 0.4) + (resRate * 0.3) + (85 * 0.2) + (90 * 0.1));
-    const finalScore = totalAssigned > 0 ? Math.max(70, Math.min(98, scoreVal)) : 0;
-
-    return {
-      name: eng.name,
-      state: engState,
-      total: totalAssigned,
-      active,
-      resolved,
-      avgTat: totalAssigned > 0 ? "4.1" : "0.0",
-      score: finalScore
-    };
-  }).filter(e => e.total > 0).sort((a, b) => b.score - a.score);
-
-  // ==========================================
-  // LIVE ISSUES COMPUTATIONS
-  // ==========================================
+  // SLA Warnings list
   const openTicketsList = filteredTickets
     .filter(t => t.status !== "RESOLVED")
     .map(t => {
@@ -218,42 +503,246 @@ export function Dashboard() {
       };
     })
     .sort((a, b) => {
-      // Sort by priority (CRITICAL/URGENT first) and then days open
       const pA = a.priority === "CRITICAL" ? 3 : a.priority === "URGENT" ? 2 : 1;
       const pB = b.priority === "CRITICAL" ? 3 : b.priority === "URGENT" ? 2 : 1;
       if (pA !== pB) return pB - pA;
       return b.daysOpen - a.daysOpen;
     });
 
-  // Issue Category counts
-  const categoryMap: Record<string, number> = {};
-  filteredTickets.forEach(t => {
-    const type = t.complaint?.complaintType || "General";
-    categoryMap[type] = (categoryMap[type] || 0) + 1;
-  });
-  const categoryDistribution = Object.entries(categoryMap).map(([type, count]) => ({ type, count }));
-
-  // SLA trackers
   const slaCounts = {
     withinTarget: openTicketsList.filter(t => t.daysOpen <= 3).length,
     nearBreach: openTicketsList.filter(t => t.daysOpen > 3 && t.daysOpen <= 7).length,
     breached: openTicketsList.filter(t => t.daysOpen > 7).length
   };
 
+  // Engineer performance scores logic
+  const engineerPerformanceList = engineers.map(eng => {
+    const engTickets = tickets.filter(t => t.assignments?.[0]?.engineer?.id === eng.id);
+    const engState = engTickets[0]?.complaint?.masterInstallation?.state?.name || "Maharashtra";
+    const totalAssigned = engTickets.length;
+    const resolved = engTickets.filter(t => t.status === "RESOLVED").length;
+    const active = totalAssigned - resolved;
+
+    const resRate = totalAssigned > 0 ? (resolved / totalAssigned) * 100 : 0;
+    const volumeScore = Math.min(100, (totalAssigned / 15) * 100);
+    const scoreVal = Math.round((volumeScore * 0.4) + (resRate * 0.3) + (85 * 0.2) + (90 * 0.1));
+    const finalScore = totalAssigned > 0 ? Math.max(70, Math.min(98, scoreVal)) : 0;
+
+    return {
+      id: eng.id,
+      name: eng.name,
+      state: engState,
+      total: totalAssigned,
+      active,
+      resolved,
+      avgTat: totalAssigned > 0 ? "3.9" : "0.0",
+      score: finalScore
+    };
+  }).filter(e => e.total > 0).sort((a, b) => b.score - a.score);
+
+  // Loading state render
   if (loading) {
-    return <div style={styles.loading}>Loading O&M Dashboards...</div>;
+    return <div className="animate-fade-in" style={styles.loading}>Loading O&M Operations Dashboard...</div>;
   }
 
+  // =========================================================================
+  // RENDER: PERSONAL FIELD ENGINEER VIEW
+  // =========================================================================
+  if (isEngineer) {
+    if (!personalStats) {
+      return (
+        <div style={{ padding: "2rem", color: "var(--text-muted)", fontFamily: "var(--font-title)", textAlign: "center" }}>
+          <AlertCircle size={40} style={{ marginBottom: "1rem", color: "var(--color-manual)" }} />
+          <h2>No Engineer Profile Associated</h2>
+          <p>Please contact System Administration to link your user profile to a field engineer record.</p>
+        </div>
+      );
+    }
+
+    const { metrics, distributions, tickets: assignedTickets, engineer } = personalStats;
+    const statusDistributionData = Object.entries(distributions.status || {}).map(([name, val]) => ({
+      name,
+      value: val as number,
+      color: name === "RESOLVED" ? "var(--color-resolved)" : name === "ASSIGNED" ? "var(--color-assigned)" : "var(--color-material)"
+    }));
+
+    return (
+      <div className="animate-fade-in" style={styles.container}>
+        {/* Profile Header Block */}
+        <div style={styles.header}>
+          <div>
+            <h1 style={{ ...styles.mainTitle, fontSize: "1.85rem" }}>
+              Welcome back, <span style={{ color: "var(--primary)" }}>{engineer.name}</span>
+            </h1>
+            <div style={styles.subtitle}>
+              Personal Field Operations Dashboard • State: {engineer.state} | District: {engineer.district}
+            </div>
+          </div>
+          <button 
+            onClick={() => handlePrint(engineer.id)} 
+            className="btn-secondary" 
+            style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+          >
+            <Printer size={16} />
+            <span>Generate Performance PDF</span>
+          </button>
+        </div>
+
+        {/* Engineer KPI Metric Cards */}
+        <div style={styles.kpiGrid}>
+          <div className="panel-card" style={styles.kpiCard}>
+            <div style={styles.kpiLabel}>Assigned Complaints</div>
+            <div style={styles.kpiVal}>{metrics.totalTickets}</div>
+            <div style={styles.kpiDesc}>Cumulative assigned tickets</div>
+          </div>
+          <div className="panel-card" style={styles.kpiCard}>
+            <div style={styles.kpiLabel}>Resolved Complaints</div>
+            <div style={{ ...styles.kpiVal, color: "var(--color-resolved)" }}>{metrics.totalResolved}</div>
+            <div style={styles.kpiDesc}>Marked closed in system</div>
+          </div>
+          <div className="panel-card" style={styles.kpiCard}>
+            <div style={styles.kpiLabel}>Active Pending Cases</div>
+            <div style={{ ...styles.kpiVal, color: "var(--color-material)" }}>{metrics.activeTickets}</div>
+            <div style={styles.kpiDesc}>Require diagnostics / repairs</div>
+          </div>
+          <div className="panel-card" style={styles.kpiCard}>
+            <div style={styles.kpiLabel}>Resolution SLA Rate</div>
+            <div style={{ ...styles.kpiVal, color: "var(--primary)" }}>{metrics.resolutionRate}%</div>
+            <div style={styles.kpiDesc}>Completed vs Assigned ratio</div>
+          </div>
+          <div className="panel-card" style={styles.kpiCard}>
+            <div style={styles.kpiLabel}>Performance Score</div>
+            <div style={{ 
+              ...styles.kpiVal, 
+              color: metrics.performanceScore >= 90 ? "var(--color-resolved)" : metrics.performanceScore >= 80 ? "var(--accent)" : "var(--color-manual)" 
+            }}>
+              {metrics.performanceScore}%
+            </div>
+            <div style={styles.kpiDesc}>Calculated threshold (Target &gt; 80%)</div>
+          </div>
+          <div className="panel-card" style={styles.kpiCard}>
+            <div style={styles.kpiLabel}>Average TAT</div>
+            <div style={styles.kpiVal}>{metrics.avgTat} Days</div>
+            <div style={styles.kpiDesc}>Target closure &lt; 4 days</div>
+          </div>
+        </div>
+
+        {/* Two Column details (Charts + Assigned list) */}
+        <div style={styles.twoColumnGrid}>
+          {/* Left Column: List of assigned tickets */}
+          <div style={{ ...styles.columnGroup, flex: 2.2 }}>
+            <div className="panel-card" style={{ padding: 0 }}>
+              <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ ...styles.cardHeader, margin: 0 }}>My Active Assignments Registry</h3>
+              </div>
+              <div className="custom-table-container" style={{ margin: 0, border: "none" }}>
+                <table className="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Ticket ID</th>
+                      <th>Application ID</th>
+                      <th>Complaint Category</th>
+                      <th>Priority</th>
+                      <th>Status</th>
+                      <th>Assigned At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assignedTickets.map((t: any) => (
+                      <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}`)}>
+                        <td style={{ fontWeight: "600", color: "var(--text-main)" }}>{t.ticketNumber}</td>
+                        <td style={{ fontFamily: "monospace" }}>{t.complaint?.applicationId}</td>
+                        <td>{t.complaint?.complaintType}</td>
+                        <td>
+                          <span style={{ 
+                            color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "var(--text-main)", 
+                            fontWeight: "600" 
+                          }}>
+                            {t.priority}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`status-badge status-${t.status.toLowerCase()}`}>
+                            {t.status.replace(/_/g, " ")}
+                          </span>
+                        </td>
+                        <td style={{ color: "var(--text-muted)" }}>
+                          {new Date(t.createdAt).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))}
+                    {assignedTickets.length === 0 && (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: "center", padding: "3rem", color: "var(--text-muted)" }}>
+                          No active complaints assigned to you! Have a coffee.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Interactive personal statistics charts */}
+          <div style={{ ...styles.columnGroupSide, flex: 1 }}>
+            <div className="panel-card" style={styles.metricCard}>
+              <h3 style={styles.cardHeader}>Case Status Breakdown</h3>
+              <DonutChart data={statusDistributionData} />
+            </div>
+
+            <div className="panel-card" style={styles.metricCard}>
+              <h3 style={styles.cardHeader}>Assignment Priority Mix</h3>
+              <div style={styles.stateList}>
+                <div style={styles.stateRow}>
+                  <span style={styles.stateName}>Critical / Urgent</span>
+                  <span style={{ ...styles.stateBadge, color: "var(--color-manual)" }}>
+                    {distributions.priority.CRITICAL + distributions.priority.URGENT} cases
+                  </span>
+                </div>
+                <div style={styles.stateRow}>
+                  <span style={styles.stateName}>Standard / Routine</span>
+                  <span style={{ ...styles.stateBadge, color: "var(--primary)" }}>
+                    {distributions.priority.STANDARD} cases
+                  </span>
+                </div>
+                <div style={styles.stateRow}>
+                  <span style={styles.stateName}>SLA Breached Cases</span>
+                  <span style={{ ...styles.stateBadge, color: "var(--color-material)" }}>
+                    {metrics.slaBreachedCount} cases
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // RENDER: SYSTEM ADMINISTRATOR PORTAL VIEW
+  // =========================================================================
   return (
     <div className="animate-fade-in" style={styles.container}>
-      {/* Top Filter and Info Bar */}
+      {/* Top Filter and Title */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.mainTitle}>O&M Operations Hub</h1>
-          <div style={styles.subtitle}>Real-time system health and legacy overview since 2013</div>
+          <div style={styles.subtitle}>Real-time system health and operational metrics dashboard</div>
         </div>
 
         <div style={styles.filterContainer}>
+          {selectedState !== "ALL" && (
+            <button 
+              onClick={() => window.open(`/states/${encodeURIComponent(selectedState)}/report`, "_blank")}
+              className="btn-primary animate-fade-in"
+              style={{ padding: "0.45rem 0.85rem", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.4rem" }}
+            >
+              <Printer size={14} /> Export {selectedState} PDF
+            </button>
+          )}
+
           <div style={styles.filterWidget}>
             <Filter size={14} color="var(--text-muted)" />
             <select 
@@ -284,11 +773,14 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Tabs Menu Navigation */}
+      {/* Navigation tabs */}
       <div style={styles.tabsContainer}>
         <button 
           style={{ ...styles.tabBtn, ...(activeTab === "overview" ? styles.tabBtnActive : {}) }}
-          onClick={() => setActiveTab("overview")}
+          onClick={() => {
+            setActiveTab("overview");
+            setSelectedEngineerProfile(null);
+          }}
         >
           <BarChart3 size={16} /> Operations Overview
         </button>
@@ -296,28 +788,32 @@ export function Dashboard() {
           style={{ ...styles.tabBtn, ...(activeTab === "engineers" ? styles.tabBtnActive : {}) }}
           onClick={() => setActiveTab("engineers")}
         >
-          <Award size={16} /> Engineer Performance
+          <Award size={16} /> Engineer Scorecard Matrix
         </button>
         <button 
           style={{ ...styles.tabBtn, ...(activeTab === "live_issues" ? styles.tabBtnActive : {}) }}
-          onClick={() => setActiveTab("live_issues")}
+          onClick={() => {
+            setActiveTab("live_issues");
+            setSelectedEngineerProfile(null);
+          }}
         >
           <AlertCircle size={16} /> Live Issues & SLA
         </button>
         <button 
           style={{ ...styles.tabBtn, ...(activeTab === "legacy" ? styles.tabBtnActive : {}) }}
-          onClick={() => setActiveTab("legacy")}
+          onClick={() => {
+            setActiveTab("legacy");
+            setSelectedEngineerProfile(null);
+          }}
         >
           <Calendar size={16} /> Legacy History (2013-2026)
         </button>
       </div>
 
-      {/* ==========================================
-          TAB 1: OPERATIONS OVERVIEW
-          ========================================== */}
+      {/* TAB 1: OPERATIONS OVERVIEW */}
       {activeTab === "overview" && (
         <div>
-          {/* Overview KPI Cards */}
+          {/* KPI grid overview */}
           <div style={styles.kpiGrid}>
             <div className="panel-card" style={styles.kpiCard}>
               <div style={styles.kpiLabel}>Total Incident Complaints</div>
@@ -352,31 +848,34 @@ export function Dashboard() {
           </div>
 
           <div style={styles.twoColumnGrid}>
-            {/* Left Column: Charts and Breakdowns */}
+            {/* Left Column: Interactive area chart and breakdown */}
             <div style={styles.columnGroup}>
-              {/* Distributions Card */}
+              {/* Daily Operations Load Area Chart */}
               <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Distributions Summary</h3>
-                <div style={styles.distributionRow}>
-                  {/* Statuses */}
-                  <div style={{ flex: 1 }}>
-                    <h4 style={styles.subHeader}>Statuses</h4>
-                    {Object.entries(statusMap).map(([status, count]) => (
-                      <div key={status} style={styles.distBarContainer}>
+                <h3 style={styles.cardHeader}>Daily Operations Load (Last 14 Days)</h3>
+                <AreaChart data={trendData} />
+              </div>
+
+              {/* Status and Projects distribution columns */}
+              <div className="panel-card" style={styles.metricCard}>
+                <h3 style={styles.cardHeader}>Scheme & Distribution Split</h3>
+                <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: "200px" }}>
+                    <h4 style={styles.subHeader}>Pipeline Schemes</h4>
+                    {Object.entries(projectMap).map(([proj, count]) => (
+                      <div key={proj} style={styles.distBarContainer}>
                         <div style={styles.distBarLabel}>
-                          <span>{status.replace(/_/g, " ")}</span>
+                          <span>{proj}</span>
                           <span>{count}</span>
                         </div>
                         <div style={styles.barBg}>
-                          <div style={{ ...styles.barFill, width: `${(count / totalCount) * 100}%`, backgroundColor: "var(--primary)" }}></div>
+                          <div style={{ ...styles.barFill, width: `${(count / totalCount) * 100}%`, backgroundColor: "var(--accent)" }} />
                         </div>
                       </div>
                     ))}
                   </div>
-
-                  {/* Priorities */}
-                  <div style={{ flex: 1, borderLeft: "1px solid var(--border-color)", paddingLeft: "1.5rem" }}>
-                    <h4 style={styles.subHeader}>Priorities</h4>
+                  <div style={{ flex: 1, minWidth: "200px", borderLeft: "1px solid var(--border-color)", paddingLeft: "1.5rem" }}>
+                    <h4 style={styles.subHeader}>Priority Split</h4>
                     {Object.entries(priorityCounts).map(([priority, count]) => (
                       <div key={priority} style={styles.distBarContainer}>
                         <div style={styles.distBarLabel}>
@@ -388,65 +887,22 @@ export function Dashboard() {
                             ...styles.barFill, 
                             width: `${(count / totalCount) * 100}%`, 
                             backgroundColor: priority === "CRITICAL" ? "var(--color-manual)" : priority === "URGENT" ? "var(--color-material)" : "var(--primary)" 
-                          }}></div>
+                          }} />
                         </div>
                       </div>
                     ))}
-                  </div>
-
-                  {/* Schemes */}
-                  <div style={{ flex: 1, borderLeft: "1px solid var(--border-color)", paddingLeft: "1.5rem" }}>
-                    <h4 style={styles.subHeader}>Schemes & Projects</h4>
-                    {Object.entries(projectMap).map(([proj, count]) => (
-                      <div key={proj} style={styles.distBarContainer}>
-                        <div style={styles.distBarLabel}>
-                          <span>{proj}</span>
-                          <span>{count}</span>
-                        </div>
-                        <div style={styles.barBg}>
-                          <div style={{ ...styles.barFill, width: `${(count / totalCount) * 100}%`, backgroundColor: "var(--accent)" }}></div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Bar Chart trend visualization */}
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Daily Operations Load (Last 14 Days)</h3>
-                <div style={styles.chartContainer}>
-                  {trendData.map(d => {
-                    const maxCount = Math.max(...trendData.map(x => x.raised + x.resolved)) || 5;
-                    const raisedPct = (d.raised / maxCount) * 100;
-                    const resolvedPct = (d.resolved / maxCount) * 100;
-                    return (
-                      <div key={d.date} style={styles.chartCol}>
-                        <div style={styles.chartBarWrapper}>
-                          <div style={{ ...styles.chartBar, height: `${raisedPct}%`, backgroundColor: "hsla(35, 100%, 50%, 0.7)" }} title={`Raised: ${d.raised}`}></div>
-                          <div style={{ ...styles.chartBar, height: `${resolvedPct}%`, backgroundColor: "hsla(145, 80%, 40%, 0.7)" }} title={`Resolved: ${d.resolved}`}></div>
-                        </div>
-                        <div style={styles.chartLabel}>{d.date}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={styles.chartLegend}>
-                  <div style={styles.legendItem}>
-                    <div style={{ ...styles.legendDot, backgroundColor: "hsla(35, 100%, 50%, 0.7)" }}></div>
-                    <span>Complaints Raised</span>
-                  </div>
-                  <div style={styles.legendItem}>
-                    <div style={{ ...styles.legendDot, backgroundColor: "hsla(145, 80%, 40%, 0.7)" }}></div>
-                    <span>Resolved Tickets</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Right Column: States & Stage Timeline */}
+            {/* Right Column: Donut Status chart and Geographic Split */}
             <div style={styles.columnGroupSide}>
-              {/* Geographic States */}
+              <div className="panel-card" style={styles.metricCard}>
+                <h3 style={styles.cardHeader}>Complaints Status Breakdown</h3>
+                <DonutChart data={donutStatusData} />
+              </div>
+
               <div className="panel-card" style={styles.metricCard}>
                 <h3 style={styles.cardHeader}>Geographic Split (Active States)</h3>
                 <div style={styles.stateList}>
@@ -459,34 +915,6 @@ export function Dashboard() {
                       <div style={styles.stateBadge}>{st.count} Tickets</div>
                     </div>
                   ))}
-                  {stateDistribution.length === 0 && (
-                    <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "1rem" }}>No tickets matching filters.</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Stage Progress timeline */}
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Live Ticket Pipeline Stages</h3>
-                <div style={styles.pipelineContainer}>
-                  {[
-                    { label: "1. Ticket Raised", count: stageCounts.RECEIVED, color: "var(--text-muted)" },
-                    { label: "2. Assigned", count: stageCounts.ASSIGNED, color: "var(--accent)" },
-                    { label: "3. Diagnostic Checked", count: stageCounts.INITIAL_VISIT_COMPLETED, color: "var(--primary)" },
-                    { label: "4. Material Requested", count: stageCounts.MATERIAL_REQUESTED, color: "var(--color-material)" },
-                    { label: "5. Insurance Submitted", count: stageCounts.INSURANCE_SUBMITTED, color: "var(--primary)" },
-                    { label: "6. Fully Resolved", count: stageCounts.RESOLVED, color: "var(--color-resolved)" }
-                  ].map(stage => (
-                    <div key={stage.label} style={styles.pipelineRow}>
-                      <div style={styles.pipelineLabel}>
-                        <span style={{ fontWeight: "500" }}>{stage.label}</span>
-                        <span style={{ color: "#fff", fontWeight: "600" }}>{stage.count}</span>
-                      </div>
-                      <div style={styles.barBg}>
-                        <div style={{ ...styles.barFill, width: `${totalCount > 0 ? (stage.count / totalCount) * 100 : 0}%`, backgroundColor: stage.color }}></div>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
@@ -494,41 +922,12 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* ==========================================
-          TAB 2: ENGINEER PERFORMANCE
-          ========================================== */}
+      {/* TAB 2: ENGINEER SCORECARD MATRIX */}
       {activeTab === "engineers" && (
         <div>
-          {/* KPI grid for engineers */}
-          <div style={styles.kpiGrid}>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Total Active Engineers</div>
-              <div style={styles.kpiVal}>{engineers.length}</div>
-              <div style={styles.kpiDesc}>Staff registered</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiVal}>{resolvedCount} Tickets</div>
-              <div style={styles.kpiDesc}>Across the entire region</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Average Performance Score</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-resolved)" }}>
-                {engineerPerformanceList.length > 0 
-                  ? Math.round(engineerPerformanceList.reduce((acc, x) => acc + x.score, 0) / engineerPerformanceList.length) 
-                  : 85}%
-              </div>
-              <div style={styles.kpiDesc}>Target SLA threshold is 80%</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Average Engineer TAT</div>
-              <div style={styles.kpiVal}>3.9 Days</div>
-              <div style={styles.kpiDesc}>Diagnostic to resolution</div>
-            </div>
-          </div>
-
+          {/* Detailed performance list */}
           <div style={styles.twoColumnGrid}>
-            {/* Left: Detailed performance grid */}
-            <div style={{ ...styles.columnGroup, flex: 2 }}>
+            <div style={{ ...styles.columnGroup, flex: 1.8 }}>
               <div className="panel-card" style={{ padding: "0" }}>
                 <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)" }}>
                   <h3 style={{ ...styles.cardHeader, margin: 0 }}>Engineer Performance Scorecard Matrix</h3>
@@ -544,12 +943,13 @@ export function Dashboard() {
                         <th>Resolved</th>
                         <th>Avg TAT</th>
                         <th>Performance Score</th>
+                        <th>Details</th>
                       </tr>
                     </thead>
                     <tbody>
                       {engineerPerformanceList.map(eng => (
-                        <tr key={eng.name}>
-                          <td style={{ fontWeight: "600", color: "#fff" }}>{eng.name}</td>
+                        <tr key={eng.id}>
+                          <td style={{ fontWeight: "600", color: "var(--text-main)" }}>{eng.name}</td>
                           <td style={{ color: "var(--text-muted)" }}>{eng.state}</td>
                           <td>{eng.total}</td>
                           <td style={{ color: "var(--color-material)", fontWeight: "600" }}>{eng.active}</td>
@@ -568,74 +968,116 @@ export function Dashboard() {
                                   ...styles.scoreBarFill, 
                                   width: `${eng.score}%`, 
                                   backgroundColor: eng.score >= 90 ? "var(--color-resolved)" : eng.score >= 80 ? "var(--accent)" : "var(--color-manual)" 
-                                }}></div>
+                                }} />
                               </div>
                             </div>
                           </td>
-                        </tr>
-                      ))}
-                      {engineerPerformanceList.length === 0 && (
-                        <tr>
-                          <td colSpan={7} style={{ textAlign: "center", padding: "3rem", color: "var(--text-muted)" }}>
-                            No active ticket assignments found for the current region filters.
+                          <td>
+                            <button 
+                              onClick={() => handleViewEngineerPerformance(eng.id)}
+                              style={{ 
+                                background: "none", 
+                                border: "none", 
+                                color: "var(--primary)", 
+                                cursor: "pointer", 
+                                display: "flex", 
+                                alignItems: "center",
+                                fontWeight: "500",
+                                fontSize: "0.82rem"
+                              }}
+                            >
+                              Profile <ChevronRight size={14} />
+                            </button>
                           </td>
                         </tr>
-                      )}
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </div>
             </div>
 
-            {/* Right: Score breakdown definition */}
-            <div style={{ ...styles.columnGroupSide, flex: 1 }}>
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Performance Score Formula</h3>
-                <div style={styles.formulaPanel}>
-                  <div style={styles.formulaRow}>
-                    <div style={styles.formulaPct}>40%</div>
-                    <div style={styles.formulaDesc}>
-                      <div style={styles.formulaTitle}>Volume Assigned</div>
-                      <div style={styles.formulaSub}>Total workload of resolved and active tickets.</div>
+            {/* Right: Detailed Selected Engineer Profile & PDF report downloader */}
+            <div style={{ ...styles.columnGroupSide, flex: 1.2 }}>
+              {selectedEngineerProfile ? (
+                <div className="panel-card animate-fade-in" style={{ borderColor: "var(--primary)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
+                    <div>
+                      <h3 style={{ ...styles.cardHeader, margin: 0, fontSize: "1.2rem" }}>
+                        {selectedEngineerProfile.engineer.name}
+                      </h3>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        {selectedEngineerProfile.engineer.email} | {selectedEngineerProfile.engineer.phone}
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => handlePrint(selectedEngineerProfile.engineer.id)}
+                      className="btn-primary"
+                      style={{ padding: "0.4rem 0.75rem", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}
+                    >
+                      <Printer size={14} /> Print PDF
+                    </button>
+                  </div>
+
+                  <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Assigned tickets:</span>
+                      <span style={{ fontWeight: "600", color: "var(--text-main)" }}>{selectedEngineerProfile.metrics.totalTickets}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Resolved closed:</span>
+                      <span style={{ fontWeight: "600", color: "var(--color-resolved)" }}>{selectedEngineerProfile.metrics.totalResolved}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Active pending:</span>
+                      <span style={{ fontWeight: "600", color: "var(--color-material)" }}>{selectedEngineerProfile.metrics.activeTickets}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>SLA resolution rate:</span>
+                      <span style={{ fontWeight: "600", color: "var(--primary)" }}>{selectedEngineerProfile.metrics.resolutionRate}%</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Average Turn-around-time:</span>
+                      <span style={{ fontWeight: "600", color: "var(--text-main)" }}>{selectedEngineerProfile.metrics.avgTat} days</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>SLA breaches occurred:</span>
+                      <span style={{ fontWeight: "600", color: "var(--color-manual)" }}>{selectedEngineerProfile.metrics.slaBreachedCount}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px dashed var(--border-color)", paddingTop: "0.75rem" }}>
+                      <span style={{ fontSize: "0.88rem", fontWeight: "600", color: "var(--text-main)" }}>Performance Score:</span>
+                      <span style={{ 
+                        fontWeight: "700", 
+                        color: selectedEngineerProfile.metrics.performanceScore >= 90 ? "var(--color-resolved)" : "var(--accent)"
+                      }}>
+                        {selectedEngineerProfile.metrics.performanceScore}%
+                      </span>
                     </div>
                   </div>
-                  <div style={styles.formulaRow}>
-                    <div style={styles.formulaPct}>30%</div>
-                    <div style={styles.formulaDesc}>
-                      <div style={styles.formulaTitle}>Resolution Rate</div>
-                      <div style={styles.formulaSub}>Percentage of assigned tickets marked RESOLVED.</div>
-                    </div>
-                  </div>
-                  <div style={styles.formulaRow}>
-                    <div style={styles.formulaPct}>20%</div>
-                    <div style={styles.formulaDesc}>
-                      <div style={styles.formulaTitle}>TAT (SLA Speed)</div>
-                      <div style={styles.formulaSub}>Average days to close a ticket (Target &lt; 4 days).</div>
-                    </div>
-                  </div>
-                  <div style={styles.formulaRow}>
-                    <div style={styles.formulaPct}>10%</div>
-                    <div style={styles.formulaDesc}>
-                      <div style={styles.formulaTitle}>Pace Consistency</div>
-                      <div style={styles.formulaSub}>Active responses in the last 30 operational days.</div>
-                    </div>
+                  
+                  <div style={{ marginTop: "1rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    * Select another engineer in the scorecard matrix to load their metrics details overlay.
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="panel-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "220px", color: "var(--text-muted)" }}>
+                  <UserCheck size={36} style={{ marginBottom: "1rem", color: "var(--text-muted)" }} />
+                  <p style={{ fontSize: "0.88rem", textAlign: "center" }}>
+                    Select an engineer profile from the scorecard matrix to view their performance statistics profile and export PDF report.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ==========================================
-          TAB 3: LIVE ISSUES & SLA TRACKER
-          ========================================== */}
+      {/* TAB 3: LIVE ISSUES & SLA TRACKER */}
       {activeTab === "live_issues" && (
         <div>
-          {/* SLA Tracking boxes */}
           <div style={styles.kpiGrid}>
             <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Within SLA SLA Target</div>
+              <div style={styles.kpiLabel}>Within SLA Target</div>
               <div style={{ ...styles.kpiVal, color: "var(--color-resolved)" }}>{slaCounts.withinTarget}</div>
               <div style={styles.kpiDesc}>Open &lt; 3 days</div>
             </div>
@@ -657,11 +1099,10 @@ export function Dashboard() {
           </div>
 
           <div style={styles.twoColumnGrid}>
-            {/* Left: Open Issues List */}
-            <div style={{ ...styles.columnGroup, flex: 2.5 }}>
+            <div style={{ ...styles.columnGroup, flex: 2.2 }}>
               <div className="panel-card" style={{ padding: "0" }}>
-                <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <h3 style={{ ...styles.cardHeader, margin: 0 }}>Active Open Issues (Sorted by Priority & Days Open)</h3>
+                <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)" }}>
+                  <h3 style={{ ...styles.cardHeader, margin: 0 }}>Active Open Issues (Sorted by SLA Age)</h3>
                 </div>
                 <div className="custom-table-container" style={{ margin: 0, border: "none" }}>
                   <table className="custom-table">
@@ -671,7 +1112,7 @@ export function Dashboard() {
                         <th>Application ID</th>
                         <th>District, State</th>
                         <th>Priority</th>
-                        <th>Complaint Category</th>
+                        <th>Category</th>
                         <th>Assigned Engineer</th>
                         <th>Age</th>
                       </tr>
@@ -679,12 +1120,12 @@ export function Dashboard() {
                     <tbody>
                       {openTicketsList.map(t => (
                         <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}`)}>
-                          <td style={{ fontWeight: "600", color: "#fff" }}>{t.ticketNumber}</td>
+                          <td style={{ fontWeight: "600", color: "var(--text-main)" }}>{t.ticketNumber}</td>
                           <td style={{ fontFamily: "monospace" }}>{t.applicationId}</td>
                           <td style={{ color: "var(--text-muted)" }}>{t.district}, {t.state}</td>
                           <td>
                             <span style={{ 
-                              color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "#fff", 
+                              color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "var(--text-main)", 
                               fontWeight: "600" 
                             }}>
                               {t.priority}
@@ -700,33 +1141,25 @@ export function Dashboard() {
                           </td>
                         </tr>
                       ))}
-                      {openTicketsList.length === 0 && (
-                        <tr>
-                          <td colSpan={7} style={{ textAlign: "center", padding: "3rem", color: "var(--text-muted)" }}>
-                            No active open tickets found! All tickets in this category have been resolved.
-                          </td>
-                        </tr>
-                      )}
                     </tbody>
                   </table>
                 </div>
               </div>
             </div>
 
-            {/* Right: Breakdown of Issue Categories */}
-            <div style={{ ...styles.columnGroupSide, flex: 1 }}>
+            <div style={{ ...styles.columnGroupSide, flex: 0.8 }}>
               <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Issue Categories Distribution</h3>
-                <div style={styles.stateList}>
-                  {categoryDistribution.map(cat => (
-                    <div key={cat.type} style={styles.stateRow}>
-                      <span style={styles.stateName}>{cat.type}</span>
-                      <span style={styles.stateBadge}>{cat.count} tickets</span>
-                    </div>
-                  ))}
-                  {categoryDistribution.length === 0 && (
-                    <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "1rem" }}>No tickets found.</div>
-                  )}
+                <h3 style={styles.cardHeader}>SLA Tracking Protocol</h3>
+                <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  <p>
+                    <strong>● Target (Green)</strong>: All assigned complaints should be diagnostic checked and resolved within 72 hours (3 days).
+                  </p>
+                  <p>
+                    <strong>● Warning (Yellow)</strong>: Open between 3 and 7 days. Escalation warnings are sent to respective State Managers.
+                  </p>
+                  <p>
+                    <strong>● Breached (Red)</strong>: Open for over 7 days. Action is required. Corrective reports must be submitted explaining the delay.
+                  </p>
                 </div>
               </div>
             </div>
@@ -734,12 +1167,9 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* ==========================================
-          TAB 4: LEGACY HISTORY (2013-2026)
-          ========================================== */}
+      {/* TAB 4: LEGACY HISTORY (2013-2026) */}
       {activeTab === "legacy" && (
         <div>
-          {/* Legacy historical metrics grid */}
           <div style={styles.kpiGrid}>
             <div className="panel-card" style={styles.kpiCard}>
               <div style={styles.kpiLabel}>Total Legacy Complaints</div>
@@ -764,102 +1194,50 @@ export function Dashboard() {
           </div>
 
           <div style={styles.twoColumnGrid}>
-            {/* Year-wise comparison bar chart */}
+            {/* Lighter styled Year-wise legacy comparison */}
             <div style={{ ...styles.columnGroup, flex: 2 }}>
               <div className="panel-card" style={styles.metricCard}>
                 <h3 style={styles.cardHeader}>Annual Legacy Complaint Trends (2021 – 2026)</h3>
-                <div style={styles.chartContainer}>
+                <div style={{ display: "flex", justifyContent: "space-between", height: "180px", alignItems: "flex-end", gap: "1rem", borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
                   {[
-                    { year: "2021", complaints: 1845, resolved: 1782 },
-                    { year: "2022", complaints: 2410, resolved: 2355 },
-                    { year: "2023", complaints: 3120, resolved: 3022 },
-                    { year: "2024", complaints: 3840, resolved: 3710 },
-                    { year: "2025", complaints: 2530, resolved: 2460 },
-                    { year: "2026", complaints: 502, resolved: 523 } // including current month
-                  ].map(y => {
-                    const maxVal = 4000;
-                    const compPct = (y.complaints / maxVal) * 100;
-                    const resPct = (y.resolved / maxVal) * 100;
-                    return (
-                      <div key={y.year} style={styles.chartCol}>
-                        <div style={styles.chartBarWrapper}>
-                          <div style={{ ...styles.chartBar, height: `${compPct}%`, backgroundColor: "var(--primary)" }} title={`Complaints: ${y.complaints}`}></div>
-                          <div style={{ ...styles.chartBar, height: `${resPct}%`, backgroundColor: "var(--color-resolved)" }} title={`Resolved: ${y.resolved}`}></div>
-                        </div>
-                        <div style={styles.chartLabel}>{y.year}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={styles.chartLegend}>
-                  <div style={styles.legendItem}>
-                    <div style={{ ...styles.legendDot, backgroundColor: "var(--primary)" }}></div>
-                    <span>Yearly Registered Complaints</span>
-                  </div>
-                  <div style={styles.legendItem}>
-                    <div style={{ ...styles.legendDot, backgroundColor: "var(--color-resolved)" }}></div>
-                    <span>Yearly Resolved Tickets</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Historical action lists */}
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Top Historic Resolution Corrective Actions</h3>
-                <div style={styles.stateList}>
-                  {[
-                    { action: "Wiring Restrap / Controller Card Reset", count: 4812, pct: "34%" },
-                    { action: "Submersible Motor Winding & Replaced", count: 3210, pct: "23%" },
-                    { action: "Solar Panel De-Dusting & Cleanups", count: 2410, pct: "17%" },
-                    { action: "Controller Spline Shaft Repair", count: 1845, pct: "13%" },
-                    { action: "Insurance Claim Replaced Parts", count: 1410, pct: "10%" }
-                  ].map(act => (
-                    <div key={act.action} style={styles.stateRow}>
-                      <span style={styles.stateName}>{act.action}</span>
-                      <span style={styles.stateBadge}>{act.count} cases ({act.pct})</span>
+                    { year: "2021", comp: 1845 },
+                    { year: "2022", comp: 2410 },
+                    { year: "2023", comp: 3120 },
+                    { year: "2024", comp: 3840 },
+                    { year: "2025", comp: 2530 },
+                    { year: "2026", comp: 502 }
+                  ].map(y => (
+                    <div key={y.year} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                      <div style={{ 
+                        width: "100%", 
+                        maxWidth: "30px", 
+                        height: `${(y.comp / 4000) * 120}px`, 
+                        background: "linear-gradient(to top, var(--primary) 0%, var(--primary-hover) 100%)", 
+                        borderRadius: "4px 4px 0 0" 
+                      }} title={`Registered: ${y.comp}`} />
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>{y.year}</span>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* Right: Support Channels and State performance */}
             <div style={{ ...styles.columnGroupSide, flex: 1 }}>
               <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Inbound Support Channel Mix</h3>
-                <div style={styles.pipelineContainer}>
-                  {[
-                    { label: "Toll Free Helpline", pct: 64, color: "var(--primary)" },
-                    { label: "Customer Direct Phone call", pct: 22, color: "var(--accent)" },
-                    { label: "CM Helpline (Sarkari Portal)", pct: 11, color: "var(--color-material)" },
-                    { label: "Email / Ticket Form Pushes", pct: 3, color: "var(--text-muted)" }
-                  ].map(chan => (
-                    <div key={chan.label} style={styles.pipelineRow}>
-                      <div style={styles.pipelineLabel}>
-                        <span style={{ fontWeight: "500" }}>{chan.label}</span>
-                        <span style={{ color: "#fff", fontWeight: "600" }}>{chan.pct}%</span>
-                      </div>
-                      <div style={styles.barBg}>
-                        <div style={{ ...styles.barFill, width: `${chan.pct}%`, backgroundColor: chan.color }}></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Historical State Volume Split</h3>
+                <h3 style={styles.cardHeader}>Historical Performance Overview</h3>
                 <div style={styles.stateList}>
-                  {[
-                    { name: "Maharashtra (MH)", count: 9140 },
-                    { name: "Haryana (HR)", count: 3210 },
-                    { name: "Rajasthan (RJ)", count: 1897 }
-                  ].map(st => (
-                    <div key={st.name} style={styles.stateRow}>
-                      <span style={styles.stateName}>{st.name}</span>
-                      <span style={styles.stateBadge}>{st.count}</span>
-                    </div>
-                  ))}
+                  <div style={styles.stateRow}>
+                    <span style={styles.stateName}>Maharashtra (MH)</span>
+                    <span style={styles.stateBadge}>9,140 complaints</span>
+                  </div>
+                  <div style={styles.stateRow}>
+                    <span style={styles.stateName}>Haryana (HR)</span>
+                    <span style={styles.stateBadge}>3,210 complaints</span>
+                  </div>
+                  <div style={styles.stateRow}>
+                    <span style={styles.stateName}>Rajasthan (RJ)</span>
+                    <span style={styles.stateBadge}>1,897 complaints</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -869,6 +1247,119 @@ export function Dashboard() {
     </div>
   );
 }
+
+// ==========================================
+// STYLES OBJECTS
+// ==========================================
+
+const chartStyles = {
+  donutContainer: {
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0.5rem 0"
+  },
+  donutCenter: {
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    justifyContent: "center",
+    height: "100%",
+    width: "100%",
+    textAlign: "center" as const,
+    fontFamily: "var(--font-title)"
+  },
+  donutCenterVal: {
+    fontSize: "1.75rem",
+    fontWeight: "700",
+    color: "var(--text-main)",
+    lineHeight: "1"
+  },
+  donutCenterLabel: {
+    fontSize: "0.7rem",
+    color: "var(--text-muted)",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.05em",
+    marginTop: "0.25rem",
+    fontWeight: "600",
+    maxWidth: "80px"
+  },
+  donutLegendList: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: "0.5rem 0.75rem",
+    marginTop: "1.25rem",
+    justifyContent: "center"
+  },
+  legendListItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.35rem",
+    cursor: "pointer",
+    transition: "opacity 0.2s ease"
+  },
+  legendListItemDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%"
+  },
+  legendListItemName: {
+    fontSize: "0.75rem",
+    color: "var(--text-main)",
+    fontWeight: "500",
+    textTransform: "capitalize" as const
+  },
+  legendListItemVal: {
+    fontSize: "0.72rem",
+    color: "var(--text-muted)"
+  },
+  lineChartWrapper: {
+    position: "relative" as const,
+    padding: "0.5rem 0"
+  },
+  lineTooltip: {
+    position: "absolute" as const,
+    top: "10px",
+    right: "10px",
+    backgroundColor: "var(--bg-card)",
+    border: "1px solid var(--border-color)",
+    borderRadius: "8px",
+    padding: "0.6rem 0.8rem",
+    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
+    pointerEvents: "none" as const,
+    zIndex: 5,
+    animation: "fadeIn 0.2s ease-out"
+  },
+  lineTooltipDate: {
+    fontSize: "0.75rem",
+    fontWeight: "700",
+    color: "var(--text-main)",
+    marginBottom: "0.25rem"
+  },
+  lineTooltipRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "1rem",
+    fontSize: "0.75rem"
+  },
+  chartLegend: {
+    display: "flex",
+    gap: "1.5rem",
+    marginTop: "0.75rem",
+    justifyContent: "center"
+  },
+  legendItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.4rem"
+  },
+  legendDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%"
+  }
+};
 
 const styles = {
   container: {
@@ -880,20 +1371,23 @@ const styles = {
     alignItems: "center",
     height: "80vh",
     fontFamily: "var(--font-title)",
-    fontSize: "1.2rem",
-    color: "var(--text-muted)"
+    fontSize: "1.1rem",
+    color: "var(--text-muted)",
+    fontWeight: "500"
   },
   header: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: "1.75rem"
+    marginBottom: "1.75rem",
+    flexWrap: "wrap" as const,
+    gap: "1rem"
   },
   mainTitle: {
     fontFamily: "var(--font-title)",
     fontSize: "1.75rem",
     fontWeight: "700",
-    color: "#fff",
+    color: "var(--text-main)",
     margin: 0
   },
   subtitle: {
@@ -903,31 +1397,35 @@ const styles = {
   },
   filterContainer: {
     display: "flex",
-    gap: "0.75rem"
+    gap: "0.75rem",
+    flexWrap: "wrap" as const
   },
   filterWidget: {
     display: "flex",
     alignItems: "center",
     gap: "0.5rem",
-    backgroundColor: "var(--bg-secondary)",
+    backgroundColor: "var(--bg-card)",
     border: "1px solid var(--border-color)",
     padding: "0.4rem 0.75rem",
-    borderRadius: "8px"
+    borderRadius: "8px",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.02)"
   },
   selectFilter: {
     backgroundColor: "transparent",
     border: "none",
-    color: "#fff",
+    color: "var(--text-main)",
     fontSize: "0.8rem",
     fontWeight: "500",
     outline: "none",
-    cursor: "pointer"
+    cursor: "pointer",
+    fontFamily: "var(--font-body)"
   },
   tabsContainer: {
     display: "flex",
     borderBottom: "1px solid var(--border-color)",
     marginBottom: "2rem",
-    gap: "0.25rem"
+    gap: "0.25rem",
+    overflowX: "auto" as const
   },
   tabBtn: {
     padding: "0.85rem 1.25rem",
@@ -935,13 +1433,14 @@ const styles = {
     border: "none",
     borderBottom: "2px solid transparent",
     color: "var(--text-muted)",
-    fontSize: "0.9rem",
+    fontSize: "0.88rem",
     fontWeight: "600",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
     gap: "0.5rem",
-    transition: "var(--transition-smooth)"
+    transition: "var(--transition-smooth)",
+    whiteSpace: "nowrap" as const
   },
   tabBtnActive: {
     color: "var(--primary)",
@@ -961,7 +1460,7 @@ const styles = {
     minHeight: "110px"
   },
   kpiLabel: {
-    fontSize: "0.75rem",
+    fontSize: "0.72rem",
     color: "var(--text-muted)",
     fontWeight: "600",
     textTransform: "uppercase" as const,
@@ -971,7 +1470,7 @@ const styles = {
     fontFamily: "var(--font-title)",
     fontSize: "1.6rem",
     fontWeight: "700",
-    color: "#fff",
+    color: "var(--text-main)",
     margin: "0.4rem 0"
   },
   kpiDesc: {
@@ -989,7 +1488,7 @@ const styles = {
     display: "flex",
     flexDirection: "column" as const,
     gap: "1.5rem",
-    minWidth: "320px"
+    minWidth: "300px"
   },
   columnGroupSide: {
     flex: 1,
@@ -1003,22 +1502,18 @@ const styles = {
   },
   cardHeader: {
     fontFamily: "var(--font-title)",
-    fontSize: "1.05rem",
+    fontSize: "1rem",
     fontWeight: "600",
-    color: "#fff",
+    color: "var(--text-main)",
     margin: "0 0 1.25rem 0"
   },
   subHeader: {
-    fontSize: "0.85rem",
-    color: "var(--accent)",
+    fontSize: "0.8rem",
+    color: "var(--primary)",
     fontWeight: "600",
     marginBottom: "0.75rem",
-    textTransform: "uppercase" as const
-  },
-  distributionRow: {
-    display: "flex",
-    gap: "1.5rem",
-    flexWrap: "wrap" as const
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.02em"
   },
   distBarContainer: {
     marginBottom: "0.75rem"
@@ -1027,7 +1522,7 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     fontSize: "0.75rem",
-    color: "var(--text-muted)",
+    color: "var(--text-main)",
     marginBottom: "0.25rem",
     fontWeight: "500"
   },
@@ -1040,59 +1535,6 @@ const styles = {
   barFill: {
     height: "100%",
     borderRadius: "3px"
-  },
-  chartContainer: {
-    display: "flex",
-    height: "160px",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: "0.5rem",
-    paddingTop: "1rem",
-    borderBottom: "1px solid var(--border-color)",
-    marginBottom: "0.5rem"
-  },
-  chartCol: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center"
-  },
-  chartBarWrapper: {
-    display: "flex",
-    alignItems: "flex-end",
-    gap: "2px",
-    height: "120px",
-    width: "100%",
-    justifyContent: "center"
-  },
-  chartBar: {
-    width: "10px",
-    borderRadius: "2px 2px 0 0",
-    transition: "height 0.3s ease"
-  },
-  chartLabel: {
-    fontSize: "0.65rem",
-    color: "var(--text-muted)",
-    marginTop: "0.4rem",
-    textAlign: "center" as const
-  },
-  chartLegend: {
-    display: "flex",
-    gap: "1.5rem",
-    marginTop: "0.75rem",
-    justifyContent: "center"
-  },
-  legendItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.4rem",
-    fontSize: "0.75rem",
-    color: "var(--text-muted)"
-  },
-  legendDot: {
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%"
   },
   stateList: {
     display: "flex",
@@ -1107,33 +1549,17 @@ const styles = {
     borderBottom: "1px dashed var(--border-color)"
   },
   stateName: {
-    fontSize: "0.85rem",
+    fontSize: "0.82rem",
     fontWeight: "500",
-    color: "#fff",
+    color: "var(--text-main)",
     display: "flex",
     alignItems: "center",
     gap: "0.5rem"
   },
   stateBadge: {
-    fontSize: "0.75rem",
-    color: "var(--accent)",
+    fontSize: "0.78rem",
+    color: "var(--primary)",
     fontWeight: "600"
-  },
-  pipelineContainer: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "0.85rem"
-  },
-  pipelineRow: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "0.25rem"
-  },
-  pipelineLabel: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: "0.75rem",
-    color: "var(--text-muted)"
   },
   scoreCell: {
     display: "flex",
@@ -1150,34 +1576,5 @@ const styles = {
   scoreBarFill: {
     height: "100%",
     borderRadius: "3px"
-  },
-  formulaPanel: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "1.25rem"
-  },
-  formulaRow: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "1rem"
-  },
-  formulaPct: {
-    fontSize: "1.1rem",
-    fontWeight: "700",
-    color: "var(--primary)",
-    width: "45px"
-  },
-  formulaDesc: {
-    flex: 1
-  },
-  formulaTitle: {
-    fontSize: "0.85rem",
-    fontWeight: "600",
-    color: "#fff"
-  },
-  formulaSub: {
-    fontSize: "0.75rem",
-    color: "var(--text-muted)",
-    marginTop: "0.15rem"
   }
 };
