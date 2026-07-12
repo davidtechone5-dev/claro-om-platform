@@ -98,10 +98,21 @@ export const authController = {
         return res.status(401).json({ detail: "Incorrect password." });
       }
 
+      let engineerId = undefined;
+      if (user.role?.name === "Engineer") {
+        const eng = await prisma.engineer.findFirst({
+          where: { email: user.email, deletedAt: null }
+        });
+        if (eng) {
+          engineerId = eng.id;
+        }
+      }
+
       const token = helpers.generateToken({
         id: user.id,
         email: user.email,
-        role: user.role?.name || "Viewer"
+        role: user.role?.name || "Viewer",
+        engineerId
       });
 
       return res.status(200).json({
@@ -110,7 +121,8 @@ export const authController = {
           id: user.id,
           email: user.email,
           fullName: user.fullName,
-          role: user.role?.name || "Viewer"
+          role: user.role?.name || "Viewer",
+          engineerId
         }
       });
     } catch (e: any) {
@@ -143,7 +155,23 @@ export const authController = {
         return res.status(404).json({ detail: "User not found" });
       }
 
-      return res.status(200).json(user);
+      let engineerId = undefined;
+      if (user.role?.name === "Engineer") {
+        const eng = await prisma.engineer.findFirst({
+          where: { email: user.email, deletedAt: null }
+        });
+        if (eng) {
+          engineerId = eng.id;
+        }
+      }
+
+      return res.status(200).json({
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role?.name || "Viewer",
+        engineerId
+      });
     } catch (e: any) {
       return res.status(500).json({ detail: e.message });
     }

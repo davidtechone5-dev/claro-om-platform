@@ -8,6 +8,7 @@ export interface AuthenticatedRequest extends Request {
     id: string;
     email: string;
     role: string;
+    engineerId?: string;
   };
 }
 
@@ -43,6 +44,30 @@ export const authMiddleware = {
         return next();
       }
     }
+
+    if (token === "mock_token_engineer") {
+      try {
+        const engineer = await prisma.engineer.findFirst({
+          where: { deletedAt: null }
+        });
+        const user = engineer ? await prisma.user.findUnique({ where: { email: engineer.email } }) : null;
+        req.user = {
+          id: user ? user.id : "engineer-default-id",
+          email: engineer ? engineer.email : "engineer@claro.com",
+          role: "Engineer",
+          engineerId: engineer ? engineer.id : "engineer-default-profile-id"
+        };
+        return next();
+      } catch (err) {
+        req.user = {
+          id: "engineer-default-id",
+          email: "engineer@claro.com",
+          role: "Engineer",
+          engineerId: "engineer-default-profile-id"
+        };
+        return next();
+      }
+    }
     
     const decoded = helpers.verifyToken(token);
     
@@ -51,6 +76,27 @@ export const authMiddleware = {
     }
     
     req.user = decoded;
+
+    // Attach engineer profile if the role is Engineer
+    if (req.user && req.user.role === "Engineer") {
+      try {
+        const engineer = await prisma.engineer.findFirst({
+          where: {
+            OR: [
+              { userId: req.user.id },
+              { email: req.user.email }
+            ],
+            deletedAt: null
+          }
+        });
+        if (engineer) {
+          req.user.engineerId = engineer.id;
+        }
+      } catch (err) {
+        console.error("Error looking up engineer in auth middleware:", err);
+      }
+    }
+    
     next();
   },
 

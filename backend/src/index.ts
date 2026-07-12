@@ -100,6 +100,12 @@ app.get(
 );
 
 app.get(
+  "/api/v1/engineers/:id/performance",
+  authMiddleware.authenticateJWT,
+  ticketController.getEngineerPerformance
+);
+
+app.get(
   "/api/v1/material-requests",
   authMiddleware.authenticateJWT,
   authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
