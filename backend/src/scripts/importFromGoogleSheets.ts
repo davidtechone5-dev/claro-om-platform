@@ -5,7 +5,12 @@ import dotenv from "dotenv";
 dotenv.config();
 
 let SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
+let GID = "";
 if (SPREADSHEET_ID && SPREADSHEET_ID.includes("docs.google.com/spreadsheets")) {
+  const gidMatch = SPREADSHEET_ID.match(/[?&]gid=([^&#]+)/);
+  if (gidMatch) {
+    GID = gidMatch[1];
+  }
   const match = SPREADSHEET_ID.match(/\/d\/([^/]+)/);
   if (match) {
     SPREADSHEET_ID = match[1];
@@ -51,8 +56,8 @@ function safeDate(dateStr?: string): Date | null {
 /**
  * Downloads the sheet tab as CSV
  */
-async function fetchSheetAsCSV(spreadsheetId: string): Promise<string> {
-  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`;
+async function fetchSheetAsCSV(spreadsheetId: string, gid: string = ""): Promise<string> {
+  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch sheet: ${response.statusText}`);
@@ -98,7 +103,7 @@ async function run() {
     });
 
     console.log("📥 Downloading consolidated sheet data...");
-    const sheetCSV = await fetchSheetAsCSV(SPREADSHEET_ID);
+    const sheetCSV = await fetchSheetAsCSV(SPREADSHEET_ID, GID);
     const rows = parseCSV(sheetCSV);
     
     // Slice off header row
@@ -241,6 +246,7 @@ async function run() {
       // 3. Upsert Engineer
       let engineerDbId = "";
       if (engName && engEmail && engPhone) {
+        // If stateId is null, map it to a default or check
         let engProfile = await prisma.engineer.findUnique({
           where: { email: engEmail }
         });
@@ -277,8 +283,8 @@ async function run() {
       const complaintDate = safeDate(createdAtStr) || new Date();
       const complaint = await prisma.complaint.create({
         data: {
-          applicationId: appId,
-          complainantName: clientName,
+          applicationId: finalAppId,
+          complainantName: finalAppId === "N/A" ? "N/A" : clientName,
           complainantPhone: clientPhone,
           complaintType: issueType,
           description: description,
@@ -291,7 +297,7 @@ async function run() {
       // Live stage could map to states (RECEIVED, ASSIGNED, INITIAL_VISIT_COMPLETED, RESOLVED, etc.)
       const ticket = await prisma.ticket.create({
         data: {
-          ticketNumber: ticketId,
+          ticketNumber: finalTicketId,
           complaintId: complaint.id,
           status: liveStageStr === "RESOLVED" ? "RESOLVED" : liveStageStr,
           priority: priorityStr,
