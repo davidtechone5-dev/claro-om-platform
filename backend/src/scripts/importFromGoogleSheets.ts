@@ -1,114 +1,87 @@
-import { prisma } from "../db.js";
-import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
+import { prisma } from "../db.js";
+import { parseCSV } from "../utils/csv.js";
+import { parseSafeDate } from "../utils/date.js";
+import { normalizeStatus, normalizePriority, normalizeMaterialStatus } from "../utils/status.js";
+import { engineerService } from "../services/engineer.service.js";
+import { ticketService } from "../services/ticket.service.js";
+import { randomUUID } from "crypto";
+import bcrypt from "bcryptjs";
 
 dotenv.config();
 
-let SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
-let GID = "";
-if (SPREADSHEET_ID && SPREADSHEET_ID.includes("docs.google.com/spreadsheets")) {
-  const gidMatch = SPREADSHEET_ID.match(/[?&]gid=([^&#]+)/);
-  if (gidMatch) {
-    GID = gidMatch[1];
-  }
-  const match = SPREADSHEET_ID.match(/\/d\/([^/]+)/);
-  if (match) {
-    SPREADSHEET_ID = match[1];
-  }
-}
-
-/**
- * Parses CSV strings (handles quoted fields containing commas)
- */
-function parseCSV(csvText: string): string[][] {
-  const lines = csvText.split(/\r?\n/);
-  return lines
-    .map((line) => {
-      const result: string[] = [];
-      let current = "";
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === "," && !inQuotes) {
-          result.push(current.trim());
-          current = "";
-        } else {
-          current += char;
-        }
-      }
-      result.push(current.trim());
-      return result.map((val) => val.replace(/^"|"$/g, "").trim());
-    })
-    .filter((row) => row.length > 0 && row.some((cell) => cell !== ""));
-}
-
-/**
- * Safely parses date strings to avoid Prisma validation crashes on invalid date entries
- */
-function safeDate(dateStr?: string): Date | null {
-  if (!dateStr) return null;
-  const parsed = new Date(dateStr.trim());
-  return isNaN(parsed.getTime()) ? null : parsed;
-}
-
-/**
- * Downloads the sheet tab as CSV
- */
-async function fetchSheetAsCSV(spreadsheetId: string, gid: string = ""): Promise<string> {
-  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
+async function fetchSheetAsCSV(spreadsheetId: string, gid?: string): Promise<string> {
+  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv${gid ? `&gid=${gid}` : ""}`;
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to fetch sheet: ${response.statusText}`);
+    throw new Error(`Failed to fetch spreadsheet: ${response.statusText}`);
   }
-  return await response.text();
+  return response.text();
 }
 
 async function run() {
-  console.log("🚀 Starting Google Sheets Public Import Script...");
-
+  let SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
   if (!SPREADSHEET_ID) {
-    console.error("❌ Error: GOOGLE_SPREADSHEET_ID is not configured in your .env file.");
+    console.error("❌ Error: GOOGLE_SPREADSHEET_ID environment variable not set.");
     process.exit(1);
   }
 
-  try {
-    // Upsert Default Admin User & Roles
-    const adminRole = await prisma.role.upsert({
-      where: { name: "Admin" },
-      update: {},
-      create: { name: "Admin", description: "System Administrator" }
-    });
+  let GID = "";
+  if (SPREADSHEET_ID.includes("docs.google.com/spreadsheets")) {
+    const gidMatch = SPREADSHEET_ID.match(/[?&]gid=([^&#]+)/);
+    if (gidMatch) {
+      GID = gidMatch[1];
+    }
+    const match = SPREADSHEET_ID.match(/\/d\/([^/]+)/);
+    if (match) {
+      SPREADSHEET_ID = match[1];
+    }
+  }
 
+  try {
+    console.log("🗑 Clearing old imported data...");
+
+    // Delete child tables first
+    await prisma.ticketHistory.deleteMany();
+    await prisma.materialRequestItem.deleteMany();
+    await prisma.materialRequest.deleteMany();
+    await prisma.serviceReport.deleteMany();
+    await prisma.initialVisit.deleteMany();
+    await prisma.ticketAssignment.deleteMany();
+
+    // Delete main tables
+    await prisma.ticket.deleteMany();
+    await prisma.complaint.deleteMany();
+
+    console.log("✅ Old ticket data cleared.");
+
+    // Seed Roles and Admin
+    const { adminRole, adminUser } = await engineerService.getAdminUser();
     const engineerRole = await prisma.role.upsert({
       where: { name: "Engineer" },
       update: {},
-      create: { name: "Engineer", description: "Field Engineer role" }
+      create: { name: "Engineer", description: "Field Engineer" }
     });
 
-    // Create a default administrator user for dashboard login testing
-    const defaultPassword = bcrypt.hashSync("admin123", 10);
     const engPassword = bcrypt.hashSync("engineer123", 10);
-    
-    const adminUser = await prisma.user.upsert({
-      where: { email: "admin@claro.com" },
-      update: {},
-      create: {
-        email: "admin@claro.com",
-        fullName: "System Admin",
-        passwordHash: defaultPassword,
-        roleId: adminRole.id
-      }
-    });
 
     console.log("📥 Downloading consolidated sheet data...");
     const sheetCSV = await fetchSheetAsCSV(SPREADSHEET_ID, GID);
+
+    console.log("================================");
+    console.log("Raw CSV line count:", sheetCSV.split(/\r?\n/).length);
+
     const rows = parseCSV(sheetCSV);
-    
-    // Slice off header row
+    console.log("Parsed rows:", rows.length);
+
     const dataRows = rows.slice(1);
     console.log(`✅ Loaded ${dataRows.length} total transaction rows from Sheet.`);
+    console.log(`📊 First row has ${dataRows[0]?.length} columns`);
+    console.log(`📊 Last row has ${dataRows[dataRows.length - 1]?.length} columns`);
+
+    console.log("First Ticket:", dataRows[0]?.[0]);
+    console.log("Last Ticket:", dataRows[dataRows.length - 1]?.[0]);
+    console.log("================================");
 
     let installationsCount = 0;
     let engineersCount = 0;
@@ -116,32 +89,13 @@ async function run() {
 
     const processedInstallations = new Set<string>();
     const processedEngineers = new Set<string>();
+    const processedTicketNumbers = new Set<string>();
 
-    for (const row of dataRows) {
-      // Columns based on fetched dump:
-      // row[0] = Ticket ID
-      // row[1] = Created At
-      // row[2] = Application ID
-      // row[6] = Customer Name (Client Name)
-      // row[8] = Customer Phone
-      // row[10] = State
-      // row[11] = District
-      // row[12] = Block/Taluka
-      // row[13] = Village
-      // row[16] = Installation Date
-      // row[18] = Priority
-      // row[19] = Issue Type
-      // row[20] = Description
-      // row[21] = Assigned Engineer ID
-      // row[22] = Assigned Engineer Name
-      // row[23] = Engineer Email
-      // row[24] = Engineer Phone
-      // row[25] = Assigned At
-      // row[27] = Initial Visit Date
-      // row[29] = Service Report Date
-      // row[31] = Material Status
-      // row[37] = Live Stage (Status)
+    for (let index = 0; index < dataRows.length; index++) {
+      const row = dataRows[index];
+      const rowNumber = index + 2;
 
+      // Extract cells based on known column indexes
       const ticketId = row[0]?.trim();
       const createdAtStr = row[1]?.trim();
       const appId = row[2]?.trim();
@@ -155,13 +109,13 @@ async function run() {
       const priorityStr = row[18]?.trim()?.toUpperCase() || "STANDARD";
       const issueType = row[19]?.trim() || "Unknown Issue";
       const description = row[20]?.trim() || "No description provided.";
-      
+
       const engId = row[21]?.trim();
       const engName = row[22]?.trim();
       const engEmail = row[23]?.trim()?.toLowerCase();
       const engPhone = row[24]?.trim();
       const assignedAtStr = row[25]?.trim();
-      
+
       const initialVisitDateStr = row[27]?.trim();
       const serviceReportDateStr = row[29]?.trim();
       const materialStatusStr = row[31]?.trim();
@@ -175,18 +129,17 @@ async function run() {
         finalAppId = "N/A";
       }
 
-      let finalTicketId = ticketId ? ticketId.trim() : "";
+      let finalTicketId = ticketId ? ticketId.trim().toUpperCase() : "";
       if (!finalTicketId) {
-        finalTicketId = `CLR-LEG-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+        finalTicketId = `CLR-LEG-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
       }
 
-      // Skip duplicate ticket numbers to prevent constraint failure crashes
-      const existingTicket = await prisma.ticket.findUnique({
-        where: { ticketNumber: finalTicketId }
-      });
-      if (existingTicket) {
+      // Prevent duplicate ticket numbers in memory to avoid unique constraint crashes
+      if (processedTicketNumbers.has(finalTicketId)) {
+        console.warn(`⚠️ Skipping duplicate Ticket ID: ${finalTicketId}`);
         continue;
       }
+      processedTicketNumbers.add(finalTicketId);
 
       // 1. Upsert State and District
       let stateId = null;
@@ -219,13 +172,13 @@ async function run() {
 
       // 2. Upsert Master Installation
       const fullAddress = finalAppId === "N/A" ? "N/A" : `${villageName ? villageName + " (Village), " : ""}${blockName ? blockName + " (Block), " : ""}${districtName}, ${stateName}`;
-      
+
       if (!processedInstallations.has(finalAppId)) {
         await prisma.masterInstallation.upsert({
           where: { applicationId: finalAppId },
           update: {
             clientName: finalAppId === "N/A" ? "N/A" : clientName,
-            installationDate: finalAppId === "N/A" ? null : safeDate(instDateStr),
+            installationDate: finalAppId === "N/A" ? null : parseSafeDate(instDateStr),
             address: fullAddress,
             stateId,
             districtId
@@ -233,7 +186,7 @@ async function run() {
           create: {
             applicationId: finalAppId,
             clientName: finalAppId === "N/A" ? "N/A" : clientName,
-            installationDate: finalAppId === "N/A" ? null : safeDate(instDateStr),
+            installationDate: finalAppId === "N/A" ? null : parseSafeDate(instDateStr),
             address: fullAddress,
             stateId,
             districtId
@@ -243,10 +196,9 @@ async function run() {
         installationsCount++;
       }
 
-      // 3. Upsert Engineer
+      // 3. Upsert Engineer Profile
       let engineerDbId = "";
       if (engName && engEmail && engPhone) {
-        // If stateId is null, map it to a default or check
         let engProfile = await prisma.engineer.findUnique({
           where: { email: engEmail }
         });
@@ -280,7 +232,7 @@ async function run() {
       }
 
       // 4. Create Complaint
-      const complaintDate = safeDate(createdAtStr) || new Date();
+      const complaintDate = parseSafeDate(createdAtStr) || new Date();
       const complaint = await prisma.complaint.create({
         data: {
           applicationId: finalAppId,
@@ -294,22 +246,24 @@ async function run() {
       });
 
       // 5. Create Ticket
-      // Live stage could map to states (RECEIVED, ASSIGNED, INITIAL_VISIT_COMPLETED, RESOLVED, etc.)
+      const normalizedStatusValue = normalizeStatus(liveStageStr) || "RECEIVED";
+      const normalizedPriorityValue = normalizePriority(priorityStr) || "STANDARD";
+
       const ticket = await prisma.ticket.create({
         data: {
           ticketNumber: finalTicketId,
           complaintId: complaint.id,
-          status: liveStageStr === "RESOLVED" ? "RESOLVED" : liveStageStr,
-          priority: priorityStr,
+          status: normalizedStatusValue,
+          priority: normalizedPriorityValue,
           createdAt: complaintDate,
-          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000) // Default 72 hours due date
+          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000)
         }
       });
       ticketsCount++;
 
       // 6. Create Ticket Assignment if Engineer exists
       if (engineerDbId) {
-        const assignDate = safeDate(assignedAtStr) || complaintDate;
+        const assignDate = parseSafeDate(assignedAtStr) || complaintDate;
         await prisma.ticketAssignment.create({
           data: {
             ticketId: ticket.id,
@@ -322,7 +276,7 @@ async function run() {
 
       // 7. Create Initial Visit if date exists
       if (initialVisitDateStr && engineerDbId) {
-        const visitDate = safeDate(initialVisitDateStr) || complaintDate;
+        const visitDate = parseSafeDate(initialVisitDateStr) || complaintDate;
         await prisma.initialVisit.create({
           data: {
             ticketId: ticket.id,
@@ -335,7 +289,7 @@ async function run() {
 
       // 8. Create Service Report if date exists
       if (serviceReportDateStr) {
-        const reportDate = safeDate(serviceReportDateStr) || complaintDate;
+        const reportDate = parseSafeDate(serviceReportDateStr) || complaintDate;
         await prisma.serviceReport.create({
           data: {
             ticketId: ticket.id,
@@ -348,16 +302,16 @@ async function run() {
 
       // 9. Create Material Request if status exists and is not N/A
       if (materialStatusStr && materialStatusStr !== "N/A" && engineerDbId) {
+        const cleanMatStatus = normalizeMaterialStatus(materialStatusStr);
         const matRequest = await prisma.materialRequest.create({
           data: {
             ticketId: ticket.id,
             requestedBy: engineerDbId,
-            status: materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase(),
+            status: cleanMatStatus,
             remarks: "Required controller wiring components."
           }
         });
 
-        // Add a sample material item
         await prisma.materialRequestItem.create({
           data: {
             materialRequestId: matRequest.id,
@@ -371,9 +325,9 @@ async function run() {
       await prisma.ticketHistory.create({
         data: {
           ticketId: ticket.id,
-          newStatus: liveStageStr,
+          newStatus: normalizedStatusValue,
           changedBy: adminUser.id,
-          changeSummary: `Ticket imported from Google Sheets. Initial Status: ${liveStageStr}.`
+          changeSummary: `Ticket imported from Google Sheets. Initial Status: ${normalizedStatusValue}.`
         }
       });
     }

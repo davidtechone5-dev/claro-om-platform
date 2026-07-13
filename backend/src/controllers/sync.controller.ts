@@ -1,28 +1,12 @@
 import { Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { prisma } from "../db.js";
+import { parseSafeDate } from "../utils/date.js";
+import { normalizeStatus, normalizePriority, normalizeMaterialStatus } from "../utils/status.js";
+import { engineerService } from "../services/engineer.service.js";
+import { ticketService } from "../services/ticket.service.js";
+import { syncService } from "../services/sync.service.js";
 import { assignmentService } from "../services/assignment.service.js";
-
-const normalizeStatus = (statusStr: string): string | null => {
-  const s = statusStr.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
-  if (s === "RECEIVED" || s === "RAISED" || s === "1TICKETRAISED" || s === "TICKETRAISED") return "RECEIVED";
-  if (s === "ASSIGNED" || s === "2ASSIGNED") return "ASSIGNED";
-  if (s === "VISITED" || s === "INITIALVISITCOMPLETED" || s === "INITIALVISITDONE" || s === "3DIAGNOSTICCHECKED" || s === "DIAGNOSTICCHECKED") return "INITIAL_VISIT_COMPLETED";
-  if (s === "MATERIALREQ" || s === "MATERIALREQUESTED" || s === "4MATERIALREQUESTED" || s === "MATERIALSREQUIRED" || s === "MATERIALREQUIRED" || s === "MATERIALSREQUESTED" || s === "4MATERIALSREQUIRED") return "MATERIAL_REQUESTED";
-  if (s === "INSURANCE" || s === "INSURANCESUBMITTED" || s === "5INSURANCESUBMITTED" || s === "INSURANCECLAIMSUBMITTED" || s === "INSURANCEMOVED") return "INSURANCE_SUBMITTED";
-  if (s === "RESOLVED" || s === "FULLYRESOLVED" || s === "6FULLYRESOLVED" || s === "CLOSED" || s === "REMOTELYRESOLVED" || s === "VERIFIED") return "RESOLVED";
-  if (s === "MANUALASSIGN" || s === "MANUALASSIGNMENTREQUIRED" || s === "NEEDSASSIGNMENT" || s === "NEEDSMANUALASSIGNMENT" || s === "ONHOLD") return "MANUAL_ASSIGNMENT_REQUIRED";
-  return null;
-};
-
-const normalizePriority = (priorityStr: string): string | null => {
-  const p = priorityStr.trim().toUpperCase();
-  if (p === "CRITICAL") return "CRITICAL";
-  if (p === "URGENT") return "URGENT";
-  if (p === "STANDARD" || p === "NORMAL") return "STANDARD";
-  if (p === "LOW") return "LOW";
-  return null;
-};
 
 export const syncController = {
   /**
@@ -34,7 +18,6 @@ export const syncController = {
     const rowNumber = payload.__row_number || 0;
     const sheetName = payload.__sheet_name || "Complaint Form";
 
-    // Extract sheet parameters based on standard naming and trim whitespace
     const applicationId = (payload["Application ID"] || payload["application_id"])?.toString().trim();
     const complainantName = (payload["Customer Name"] || payload["Complainant Name"] || payload["Name"] || payload["complainant_name"] || "Unknown Client").toString().trim();
     const complainantPhone = (payload["Customer Phone"] || payload["Complainant Phone"] || payload["Phone"] || payload["complainant_phone"] || "N/A").toString().trim();
@@ -51,9 +34,6 @@ export const syncController = {
     const liveStageFromPayload = (payload["Live Stage"] || payload["live_stage"] || "").toString().trim().toUpperCase();
     const priorityFromPayload = (payload["Priority"] || payload["priority"] || "").toString().trim().toUpperCase();
 
-    console.log("📥 Incoming webhook payload keys:", Object.keys(payload));
-    console.log(`📥 Row: ${rowNumber} | Application ID: '${applicationId}' | Ticket ID from payload: '${ticketNumberFromPayload}' | Stage: '${liveStageFromPayload}' | Priority: '${priorityFromPayload}'`);
-
     if (!applicationId) {
       const errorMsg = "Missing required parameter 'Application ID'";
       await prisma.syncLog.create({
@@ -63,308 +43,192 @@ export const syncController = {
     }
 
     try {
-      // 1. Validate application exists in master installations database
-      const installation = await prisma.masterInstallation.findUnique({
-        where: { applicationId }
-      });
-
-      if (!installation) {
-        const errorMsg = `Invalid Application ID: ${applicationId} is not registered in Master Installations.`;
-        await prisma.syncLog.create({
-          data: { sheetName, rowNumber, status: "FAILED", errorMessage: errorMsg }
+      const result = await prisma.$transaction(async (tx) => {
+        // 1. Validate application exists in master installations
+        const installation = await tx.masterInstallation.findUnique({
+          where: { applicationId }
         });
-        return res.status(400).json({ detail: errorMsg });
-      }
 
-      // 1.5. Prevent duplicate ticket logs if this row was already synced
-      // Or if the Ticket ID is already present in the sheet and exists in the DB
-      let existingTicket = null;
-      if (ticketNumberFromPayload) {
-        existingTicket = await prisma.ticket.findUnique({
-          where: { ticketNumber: ticketNumberFromPayload },
-          include: { complaint: { include: { tickets: true } } }
-        });
-      }
-
-      const existingComplaint = existingTicket?.complaint || await prisma.complaint.findFirst({
-        where: {
-          formResponseId: rowNumber.toString(),
-          applicationId
-        },
-        include: {
-          tickets: true
+        if (!installation) {
+          throw new Error(`Invalid Application ID: ${applicationId} is not registered in Master Installations.`);
         }
-      });
 
-      console.log(`🔍 Lookup Result - existingTicket:`, existingTicket ? existingTicket.ticketNumber : 'null');
-      console.log(`🔍 Lookup Result - existingComplaint found:`, existingComplaint ? 'YES' : 'NO');
+        // 2. Retrieve existing ticket/complaint
+        let existingTicket = null;
+        if (ticketNumberFromPayload) {
+          existingTicket = await tx.ticket.findUnique({
+            where: { ticketNumber: ticketNumberFromPayload },
+            include: { complaint: { include: { tickets: true } } }
+          });
+        }
 
-      if (existingComplaint && existingComplaint.tickets.length > 0) {
-        // Update the existing complaint with new details from the sheet
-        await prisma.complaint.update({
-          where: { id: existingComplaint.id },
+        const existingComplaint = existingTicket?.complaint || await tx.complaint.findFirst({
+          where: { formResponseId: rowNumber.toString(), applicationId },
+          include: { tickets: true }
+        });
+
+        const { adminUser } = await engineerService.getAdminUser(tx);
+        const adminId = adminUser.id;
+
+        // If updating existing ticket/complaint
+        if (existingComplaint && existingComplaint.tickets.length > 0) {
+          await tx.complaint.update({
+            where: { id: existingComplaint.id },
+            data: {
+              complainantName,
+              complainantPhone,
+              complaintType,
+              description,
+              submissionTimestamp: parseSafeDate(timestampStr) || new Date(),
+              metadata: payload
+            }
+          });
+
+          const ticket = existingComplaint.tickets[0];
+          let engineerProfileId: string | null = null;
+
+          if (assignedEngineerName && engineerEmail) {
+            const engineer = await engineerService.upsertEngineer(
+              assignedEngineerName,
+              engineerEmail,
+              engineerPhone,
+              null,
+              null,
+              tx
+            );
+            if (engineer) {
+              engineerProfileId = engineer.id;
+              await ticketService.handleAssignment(ticket.id, engineer.id, new Date(), tx);
+
+              if (ticket.status === "RECEIVED") {
+                await tx.ticket.update({
+                  where: { id: ticket.id },
+                  data: { status: "ASSIGNED" }
+                });
+                await ticketService.createStatusHistory(ticket.id, "RECEIVED", "ASSIGNED", "Engineer assigned manually.", tx);
+              }
+            }
+          } else if (!assignedEngineerName || assignedEngineerName === "N/A" || assignedEngineerName === "") {
+            await tx.ticketAssignment.deleteMany({
+              where: { ticketId: ticket.id }
+            });
+          } else {
+            const currentAssignment = await tx.ticketAssignment.findFirst({
+              where: { ticketId: ticket.id }
+            });
+            if (currentAssignment) {
+              engineerProfileId = currentAssignment.engineerId;
+            }
+          }
+
+          const visitDate = parseSafeDate(initialVisitDateStr);
+          const reportDate = parseSafeDate(serviceReportDateStr);
+          let resolvedStatus = ticket.status;
+
+          const mappedStage = normalizeStatus(liveStageFromPayload);
+          if (mappedStage) {
+            resolvedStatus = mappedStage;
+          } else {
+            if (visitDate && engineerProfileId) {
+              await ticketService.handleInitialVisit(ticket.id, engineerProfileId, visitDate, "Completed diagnostic check.", tx);
+              if (resolvedStatus === "ASSIGNED" || resolvedStatus === "RECEIVED") {
+                resolvedStatus = "INITIAL_VISIT_COMPLETED";
+              }
+            }
+
+            if (materialStatusStr && materialStatusStr !== "N/A" && engineerProfileId) {
+              await ticketService.handleMaterialRequest(ticket.id, engineerProfileId, materialStatusStr, tx);
+              if (resolvedStatus !== "RESOLVED") {
+                resolvedStatus = "MATERIAL_REQUESTED";
+              }
+            }
+
+            if (reportDate) {
+              await ticketService.handleServiceReport(ticket.id, reportDate, "Inspected wiring and restored system operation.", "COMPLETED", tx);
+              resolvedStatus = "RESOLVED";
+            }
+          }
+
+          if (resolvedStatus !== ticket.status) {
+            await ticketService.createStatusHistory(ticket.id, ticket.status, resolvedStatus, "Status updated from Google Sheets sync.", tx);
+          }
+
+          const resolvedPriority = normalizePriority(priorityFromPayload) || ticket.priority;
+
+          await tx.ticket.update({
+            where: { id: ticket.id },
+            data: {
+              status: resolvedStatus,
+              priority: resolvedPriority,
+              metadata: payload
+            }
+          });
+
+          return { ticketNumber: ticket.ticketNumber, status: resolvedStatus };
+        }
+
+        // Creating brand new ticket/complaint
+        const complaint = await tx.complaint.create({
           data: {
+            formResponseId: rowNumber.toString(),
+            applicationId,
             complainantName,
             complainantPhone,
             complaintType,
             description,
-            submissionTimestamp: new Date(timestampStr),
+            submissionTimestamp: parseSafeDate(timestampStr) || new Date(),
+            syncStatus: "SYNCED",
             metadata: payload
           }
         });
 
-        const ticket = existingComplaint.tickets[0];
+        const now = new Date();
+        const yy = now.getFullYear().toString().slice(-2);
+        const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+        const dd = now.getDate().toString().padStart(2, '0');
+        const datePrefix = `CLR-${yy}${mm}${dd}`;
 
-        // Seed/retrieve role and admin user to map associations
-        const adminRole = await prisma.role.upsert({
-          where: { name: "Admin" },
-          update: {},
-          create: { name: "Admin", description: "System Administrator" }
-        });
+        const ticketNumber = await ticketService.generateUniqueTicketNumber(datePrefix, tx);
 
-        const adminUser = await prisma.user.upsert({
-          where: { email: "admin@claro.com" },
-          update: {},
-          create: {
-            id: "admin-default-id",
-            email: "admin@claro.com",
-            fullName: "System Admin",
-            passwordHash: "$2b$10$tM2LdskVp1Jz/KxX9.jXKeX6g9nK1lH4B2FwYxI49lG1E1E1E1E1E",
-            roleId: adminRole.id
-          }
-        });
-        const adminId = adminUser.id;
-
-        // Update Engineer Assignment if changed
-        let engineerProfileId: string | null = null;
-
-        if (assignedEngineerName && engineerEmail) {
-          const engineer = await prisma.engineer.upsert({
-            where: { email: engineerEmail },
-            update: { name: assignedEngineerName, phone: engineerPhone },
-            create: { name: assignedEngineerName, email: engineerEmail, phone: engineerPhone }
-          });
-          engineerProfileId = engineer.id;
-
-          // Re-create cleanly
-          await prisma.ticketAssignment.deleteMany({
-            where: { ticketId: ticket.id }
-          });
-
-          await prisma.ticketAssignment.create({
-            data: {
-              ticketId: ticket.id,
-              engineerId: engineer.id,
-              assignedBy: adminId,
-              assignedAt: new Date()
-            }
-          });
-
-          // Check if the ticket should move status to ASSIGNED if currently RECEIVED
-          if (ticket.status === "RECEIVED") {
-            await prisma.ticket.update({
-              where: { id: ticket.id },
-              data: { status: "ASSIGNED" }
-            });
-          }
-        } else if (!assignedEngineerName || assignedEngineerName === "N/A" || assignedEngineerName === "") {
-          // If engineer details cleared, wipe current assignments
-          await prisma.ticketAssignment.deleteMany({
-            where: { ticketId: ticket.id }
-          });
-        } else {
-          // Retrieve currently assigned engineer if not updating
-          const currentAssignment = await prisma.ticketAssignment.findFirst({
-            where: { ticketId: ticket.id }
-          });
-          if (currentAssignment) {
-            engineerProfileId = currentAssignment.engineerId;
-          }
-        }
-
-        // Helper to parse dates safely
-        const parseSafeDate = (dStr: string) => {
-          if (!dStr) return null;
-          const parsed = new Date(dStr);
-          return isNaN(parsed.getTime()) ? null : parsed;
-        };
-
-        const visitDate = parseSafeDate(initialVisitDateStr);
-        const reportDate = parseSafeDate(serviceReportDateStr);
-
-        let resolvedStatus = ticket.status;
-
-        // Normalize Live Stage dropdown value if present
-        const mappedStage = normalizeStatus(liveStageFromPayload);
-        if (mappedStage) {
-          resolvedStatus = mappedStage;
-        } else {
-          // Fall back to date-based status inference
-          if (visitDate && engineerProfileId) {
-            await prisma.initialVisit.deleteMany({
-              where: { ticketId: ticket.id }
-            });
-            await prisma.initialVisit.create({
-              data: {
-                ticketId: ticket.id,
-                engineerId: engineerProfileId,
-                visitDate,
-                remarks: "Completed diagnostic check."
-              }
-            });
-            if (resolvedStatus === "ASSIGNED" || resolvedStatus === "RECEIVED") {
-              resolvedStatus = "INITIAL_VISIT_COMPLETED";
-            }
-          }
-
-          if (materialStatusStr && materialStatusStr !== "N/A" && engineerProfileId) {
-            const statusVal = materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase();
-            await prisma.materialRequest.deleteMany({
-              where: { ticketId: ticket.id }
-            });
-            const matRequest = await prisma.materialRequest.create({
-              data: {
-                ticketId: ticket.id,
-                requestedBy: engineerProfileId,
-                status: statusVal,
-                remarks: "Required solar components."
-              }
-            });
-            await prisma.materialRequestItem.create({
-              data: {
-                materialRequestId: matRequest.id,
-                itemName: "Solar Pump Controller Card",
-                quantity: 1
-              }
-            });
-            if (resolvedStatus !== "RESOLVED") {
-              resolvedStatus = "MATERIAL_REQUESTED";
-            }
-          }
-
-          if (reportDate) {
-            await prisma.serviceReport.deleteMany({
-              where: { ticketId: ticket.id }
-            });
-            await prisma.serviceReport.create({
-              data: {
-                ticketId: ticket.id,
-                reportDate,
-                workDone: "Inspected wiring and restored system operation.",
-                status: "COMPLETED"
-              }
-            });
-            resolvedStatus = "RESOLVED";
-          }
-        }
-
-        // Determine Priority from sheet dropdown
-        let resolvedPriority = ticket.priority;
-        const mappedPriority = normalizePriority(priorityFromPayload);
-        if (mappedPriority) {
-          resolvedPriority = mappedPriority;
-        }
-
-        // Update Ticket Status, Priority and Metadata
-        await prisma.ticket.update({
-          where: { id: ticket.id },
-          data: { 
-            status: resolvedStatus,
-            priority: resolvedPriority,
-            metadata: payload
-          }
-        });
-
-        return res.status(200).json({
-          ticketNumber: ticket.ticketNumber,
-          detail: "Ticket updated successfully from Google Sheets."
-        });
-      }
-
-      // 2. Create Complaint record
-      const complaint = await prisma.complaint.create({
-        data: {
-          formResponseId: rowNumber.toString(),
-          applicationId,
-          complainantName,
-          complainantPhone,
-          complaintType,
-          description,
-          submissionTimestamp: new Date(timestampStr),
-          syncStatus: "SYNCED",
-          metadata: payload
-        }
-      });
-
-      // 3. Generate Ticket ID (format: CLR-YYMMDD-XXXX)
-      const now = new Date();
-      const yy = now.getFullYear().toString().slice(-2);
-      const mm = (now.getMonth() + 1).toString().padStart(2, '0');
-      const dd = now.getDate().toString().padStart(2, '0');
-      const datePrefix = `CLR-${yy}${mm}${dd}`;
-
-      // Count tickets created today to generate sequential 4-digit number
-      const todayCount = await prisma.ticket.count({
-        where: {
-          ticketNumber: {
-            startsWith: datePrefix
-          }
-        }
-      });
-      const sequence = (todayCount + 1).toString().padStart(4, '0');
-      const ticketNumber = `${datePrefix}-${sequence}`;
-
-      // 4. Create Ticket
-      const ticket = await prisma.ticket.create({
-        data: {
-          ticketNumber,
-          complaintId: complaint.id,
-          status: "RECEIVED",
-          priority: (payload["Priority"] || payload["priority"] || "STANDARD").toString().trim(),
-          metadata: payload
-        }
-      });
-
-      // Create history entry
-      await prisma.ticketHistory.create({
-        data: {
-          ticketId: ticket.id,
-          newStatus: "RECEIVED",
-          changeSummary: "Ticket created successfully from synced Google Form complaint."
-        }
-      });
-
-      // 5. Trigger auto-assignment service
-      const assignedEngineerId = await assignmentService.assignEngineerToTicket(ticket.id, applicationId);
-
-      let finalStatus = "RECEIVED";
-      if (!assignedEngineerId) {
-        // Update status if no engineer matches
-        finalStatus = "MANUAL_ASSIGNMENT_REQUIRED";
-        await prisma.ticket.update({
-          where: { id: ticket.id },
-          data: { status: finalStatus }
-        });
-
-        await prisma.ticketHistory.create({
+        const ticket = await tx.ticket.create({
           data: {
-            ticketId: ticket.id,
-            newStatus: finalStatus,
-            oldStatus: "RECEIVED",
-            changeSummary: "System could not auto-assign ticket. Placed in queue for Manual Assignment."
+            ticketNumber,
+            complaintId: complaint.id,
+            status: "RECEIVED",
+            priority: normalizePriority(priorityFromPayload) || "STANDARD",
+            metadata: payload
           }
         });
+
+        await ticketService.createStatusHistory(ticket.id, null, "RECEIVED", "Ticket created from synced Google Form complaint.", tx);
+
+        return { ticketId: ticket.id, ticketNumber, isNew: true };
+      });
+
+      // Handle auto assignment outside the main transaction if it is a new ticket
+      let finalStatus = "RECEIVED";
+      if (result.isNew) {
+        const assignedEngineerId = await assignmentService.assignEngineerToTicket(result.ticketId!, applicationId);
+        if (!assignedEngineerId) {
+          finalStatus = "MANUAL_ASSIGNMENT_REQUIRED";
+          await prisma.ticket.update({
+            where: { id: result.ticketId },
+            data: { status: finalStatus }
+          });
+          await ticketService.createStatusHistory(result.ticketId!, "RECEIVED", finalStatus, "System could not auto-assign ticket. Placed in Manual queue.");
+        } else {
+          finalStatus = "ASSIGNED";
+        }
       } else {
-        finalStatus = "ASSIGNED";
+        finalStatus = result.status!;
       }
 
-      // Log success
       await prisma.syncLog.create({
         data: { sheetName, rowNumber, status: "SUCCESS" }
       });
 
       return res.status(200).json({
-        ticketNumber,
+        ticketNumber: result.ticketNumber,
         status: finalStatus
       });
 
@@ -395,47 +259,33 @@ export const syncController = {
     }
 
     try {
-      const ticket = await prisma.ticket.findUnique({
-        where: { ticketNumber },
-        include: { assignments: { where: { deletedAt: null } } }
-      });
+      await prisma.$transaction(async (tx) => {
+        const ticket = await tx.ticket.findUnique({
+          where: { ticketNumber },
+          include: { assignments: { where: { deletedAt: null } } }
+        });
 
-      if (!ticket) {
-        return res.status(404).json({ detail: `Ticket ${ticketNumber} not found.` });
-      }
-
-      // Identify active assignment engineer
-      const activeAssignment = ticket.assignments[0];
-      if (!activeAssignment) {
-        return res.status(400).json({ detail: `No engineer is currently assigned to Ticket ${ticketNumber}.` });
-      }
-
-      // Create Initial Visit record
-      await prisma.initialVisit.create({
-        data: {
-          ticketId: ticket.id,
-          engineerId: activeAssignment.engineerId,
-          visitDate: new Date(timestampStr),
-          remarks: visitRemarks
+        if (!ticket) {
+          throw new Error(`Ticket ${ticketNumber} not found.`);
         }
-      });
 
-      // Update Ticket status
-      const oldStatus = ticket.status;
-      const newStatus = "INITIAL_VISIT_COMPLETED";
-
-      await prisma.ticket.update({
-        where: { id: ticket.id },
-        data: { status: newStatus }
-      });
-
-      await prisma.ticketHistory.create({
-        data: {
-          ticketId: ticket.id,
-          newStatus,
-          oldStatus,
-          changeSummary: "Engineer completed initial visit and recorded remarks."
+        const activeAssignment = ticket.assignments[0];
+        if (!activeAssignment) {
+          throw new Error(`No engineer is currently assigned to Ticket ${ticketNumber}.`);
         }
+
+        const visitDate = parseSafeDate(timestampStr) || new Date();
+        await ticketService.handleInitialVisit(ticket.id, activeAssignment.engineerId, visitDate, visitRemarks, tx);
+
+        const oldStatus = ticket.status;
+        const newStatus = "INITIAL_VISIT_COMPLETED";
+
+        await tx.ticket.update({
+          where: { id: ticket.id },
+          data: { status: newStatus }
+        });
+
+        await ticketService.createStatusHistory(ticket.id, oldStatus, newStatus, "Engineer completed initial visit and recorded remarks.", tx);
       });
 
       await prisma.syncLog.create({
@@ -462,7 +312,7 @@ export const syncController = {
     const sheetName = payload.__sheet_name || "Material Request Form";
 
     const ticketNumber = payload["Ticket ID"] || payload["ticket_number"];
-    const itemsText = payload["Items"] || payload["items"] || ""; // E.g. "Pipe (2), Valve (1)"
+    const itemsText = payload["Items"] || payload["items"] || "";
     const remarks = payload["Remarks"] || payload["remarks"] || "";
 
     if (!ticketNumber) {
@@ -470,72 +320,84 @@ export const syncController = {
     }
 
     try {
-      const ticket = await prisma.ticket.findUnique({
-        where: { ticketNumber },
-        include: { assignments: { where: { deletedAt: null } } }
-      });
-
-      if (!ticket) {
-        return res.status(404).json({ detail: `Ticket ${ticketNumber} not found.` });
-      }
-
-      const activeAssignment = ticket.assignments[0];
-      if (!activeAssignment) {
-        return res.status(400).json({ detail: `No engineer assigned to Ticket ${ticketNumber}.` });
-      }
-
-      // Create Material Request (pending warehouse manager review)
-      const materialRequest = await prisma.materialRequest.create({
-        data: {
-          ticketId: ticket.id,
-          requestedBy: activeAssignment.engineerId,
-          status: "PENDING",
-          remarks: remarks
-        }
-      });
-
-      // Parse items text (Simple CSV parse e.g. "ItemA (5), ItemB (2)")
-      // We will parse them into rows in material_request_items
-      const itemsList = itemsText.split(",");
-      for (let itemStr of itemsList) {
-        itemStr = itemStr.trim();
-        if (!itemStr) continue;
-
-        let itemName = itemStr;
-        let quantity = 1;
-
-        // Try extracting quantity if formatted like "Valve (3)" or "Pipe - 2"
-        const qtyMatch = itemStr.match(/\(([^)]+)\)/) || itemStr.match(/- (\d+)/);
-        if (qtyMatch) {
-          quantity = parseInt(qtyMatch[1], 10) || 1;
-          itemName = itemStr.replace(qtyMatch[0], "").trim();
-        }
-
-        await prisma.materialRequestItem.create({
-          data: {
-            materialRequestId: materialRequest.id,
-            itemName,
-            quantity
-          }
+      await prisma.$transaction(async (tx) => {
+        const ticket = await tx.ticket.findUnique({
+          where: { ticketNumber },
+          include: { assignments: { where: { deletedAt: null } } }
         });
-      }
 
-      // Update Ticket status
-      const oldStatus = ticket.status;
-      const newStatus = "MATERIAL_REQUESTED";
-
-      await prisma.ticket.update({
-        where: { id: ticket.id },
-        data: { status: newStatus }
-      });
-
-      await prisma.ticketHistory.create({
-        data: {
-          ticketId: ticket.id,
-          newStatus,
-          oldStatus,
-          changeSummary: `Engineer requested materials: ${itemsText}`
+        if (!ticket) {
+          throw new Error(`Ticket ${ticketNumber} not found.`);
         }
+
+        const activeAssignment = ticket.assignments[0];
+        if (!activeAssignment) {
+          throw new Error(`No engineer assigned to Ticket ${ticketNumber}.`);
+        }
+
+        const normalizedMRStatus = normalizeMaterialStatus("PENDING");
+
+        const existingMR = await tx.materialRequest.findFirst({
+          where: { ticketId: ticket.id }
+        });
+
+        let mrId: string;
+        if (existingMR) {
+          mrId = existingMR.id;
+          await tx.materialRequest.update({
+            where: { id: mrId },
+            data: { requestedBy: activeAssignment.engineerId, status: normalizedMRStatus, remarks }
+          });
+        } else {
+          mrId = randomUUID();
+          await tx.materialRequest.create({
+            data: {
+              id: mrId,
+              ticketId: ticket.id,
+              requestedBy: activeAssignment.engineerId,
+              status: normalizedMRStatus,
+              remarks
+            }
+          });
+        }
+
+        // Sync items
+        await tx.materialRequestItem.deleteMany({
+          where: { materialRequestId: mrId }
+        });
+
+        const itemsList = itemsText.split(",");
+        for (let itemStr of itemsList) {
+          itemStr = itemStr.trim();
+          if (!itemStr) continue;
+
+          let itemName = itemStr;
+          let quantity = 1;
+
+          const qtyMatch = itemStr.match(/\(([^)]+)\)/) || itemStr.match(/- (\d+)/);
+          if (qtyMatch) {
+            quantity = parseInt(qtyMatch[1], 10) || 1;
+            itemName = itemStr.replace(qtyMatch[0], "").trim();
+          }
+
+          await tx.materialRequestItem.create({
+            data: {
+              materialRequestId: mrId,
+              itemName,
+              quantity
+            }
+          });
+        }
+
+        const oldStatus = ticket.status;
+        const newStatus = "MATERIAL_REQUESTED";
+
+        await tx.ticket.update({
+          where: { id: ticket.id },
+          data: { status: newStatus }
+        });
+
+        await ticketService.createStatusHistory(ticket.id, oldStatus, newStatus, `Engineer requested materials: ${itemsText}`, tx);
       });
 
       await prisma.syncLog.create({
@@ -572,42 +434,51 @@ export const syncController = {
     }
 
     try {
-      const ticket = await prisma.ticket.findUnique({
-        where: { ticketNumber }
-      });
+      await prisma.$transaction(async (tx) => {
+        const ticket = await tx.ticket.findUnique({
+          where: { ticketNumber }
+        });
 
-      if (!ticket) {
-        return res.status(404).json({ detail: `Ticket ${ticketNumber} not found.` });
-      }
-
-      // Create Insurance Claim
-      await prisma.insuranceClaim.create({
-        data: {
-          ticketId: ticket.id,
-          claimNumber,
-          providerName,
-          amountEstimated: parseFloat(amountStr) || 0,
-          status: "SUBMITTED",
-          remarks
+        if (!ticket) {
+          throw new Error(`Ticket ${ticketNumber} not found.`);
         }
-      });
 
-      // Update Ticket status
-      const oldStatus = ticket.status;
-      const newStatus = "INSURANCE_SUBMITTED";
+        const existingClaim = await tx.insuranceClaim.findUnique({
+          where: { claimNumber }
+        });
 
-      await prisma.ticket.update({
-        where: { id: ticket.id },
-        data: { status: newStatus }
-      });
-
-      await prisma.ticketHistory.create({
-        data: {
-          ticketId: ticket.id,
-          newStatus,
-          oldStatus,
-          changeSummary: `Insurance claim submitted: #${claimNumber} ($${amountStr})`
+        if (existingClaim) {
+          await tx.insuranceClaim.update({
+            where: { id: existingClaim.id },
+            data: {
+              ticketId: ticket.id,
+              providerName,
+              amountEstimated: parseFloat(amountStr) || 0,
+              remarks
+            }
+          });
+        } else {
+          await tx.insuranceClaim.create({
+            data: {
+              ticketId: ticket.id,
+              claimNumber,
+              providerName,
+              amountEstimated: parseFloat(amountStr) || 0,
+              status: "SUBMITTED",
+              remarks
+            }
+          });
         }
+
+        const oldStatus = ticket.status;
+        const newStatus = "INSURANCE_SUBMITTED";
+
+        await tx.ticket.update({
+          where: { id: ticket.id },
+          data: { status: newStatus }
+        });
+
+        await ticketService.createStatusHistory(ticket.id, oldStatus, newStatus, `Insurance claim submitted: #${claimNumber} ($${amountStr})`, tx);
       });
 
       await prisma.syncLog.create({
@@ -643,49 +514,63 @@ export const syncController = {
     }
 
     try {
-      const ticket = await prisma.ticket.findUnique({
-        where: { ticketNumber }
-      });
+      await prisma.$transaction(async (tx) => {
+        const ticket = await tx.ticket.findUnique({
+          where: { ticketNumber }
+        });
 
-      if (!ticket) {
-        return res.status(404).json({ detail: `Ticket ${ticketNumber} not found.` });
-      }
-
-      // Calculate Turnaround Time (TAT) in minutes
-      const reportDate = new Date(timestampStr);
-      const ticketCreatedDate = new Date(ticket.createdAt);
-      const diffMs = reportDate.getTime() - ticketCreatedDate.getTime();
-      const tatMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
-
-      const isCompleted = isCompletedStr.toLowerCase() === "yes" || isCompletedStr === "true";
-      const status = isCompleted ? "RESOLVED" : "IN_PROGRESS";
-
-      // Create Service Report
-      await prisma.serviceReport.create({
-        data: {
-          ticketId: ticket.id,
-          reportDate,
-          workDone,
-          tatMinutes,
-          status: isCompleted ? "COMPLETED" : "PARTIALLY_COMPLETED"
+        if (!ticket) {
+          throw new Error(`Ticket ${ticketNumber} not found.`);
         }
-      });
 
-      // Update Ticket status
-      const oldStatus = ticket.status;
+        const reportDate = parseSafeDate(timestampStr) || new Date();
+        const ticketCreatedDate = new Date(ticket.createdAt);
+        const diffMs = reportDate.getTime() - ticketCreatedDate.getTime();
+        const tatMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
 
-      await prisma.ticket.update({
-        where: { id: ticket.id },
-        data: { status }
-      });
+        const isCompleted = isCompletedStr.toLowerCase() === "yes" || isCompletedStr === "true";
+        const status = isCompleted ? "RESOLVED" : "IN_PROGRESS";
 
-      await prisma.ticketHistory.create({
-        data: {
-          ticketId: ticket.id,
-          newStatus: status,
+        const existingReport = await tx.serviceReport.findFirst({
+          where: { ticketId: ticket.id }
+        });
+
+        if (existingReport) {
+          await tx.serviceReport.update({
+            where: { id: existingReport.id },
+            data: {
+              reportDate,
+              workDone,
+              tatMinutes,
+              status: isCompleted ? "COMPLETED" : "PARTIALLY_COMPLETED"
+            }
+          });
+        } else {
+          await tx.serviceReport.create({
+            data: {
+              ticketId: ticket.id,
+              reportDate,
+              workDone,
+              tatMinutes,
+              status: isCompleted ? "COMPLETED" : "PARTIALLY_COMPLETED"
+            }
+          });
+        }
+
+        const oldStatus = ticket.status;
+
+        await tx.ticket.update({
+          where: { id: ticket.id },
+          data: { status }
+        });
+
+        await ticketService.createStatusHistory(
+          ticket.id,
           oldStatus,
-          changeSummary: `Service Report submitted. Action: ${status}. Calculated TAT: ${tatMinutes} mins.`
-        }
+          status,
+          `Service Report submitted. Action: ${status}. Calculated TAT: ${tatMinutes} mins.`,
+          tx
+        );
       });
 
       await prisma.syncLog.create({
@@ -721,387 +606,16 @@ export const syncController = {
     }
 
     if (!SPREADSHEET_ID) {
-      return res.status(500).json({ detail: "GOOGLE_SPREADSHEET_ID is not configured in backend environment." });
+      return res.status(400).json({ detail: "Missing spreadsheet identification (GOOGLE_SPREADSHEET_ID)." });
     }
 
     try {
-      console.log("🔄 Starting Full Database Clean Sync from Google Sheets...");
-
-      // 1. Fetch spreadsheet content as CSV
-      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
-      const fetchRes = await fetch(url);
-      if (!fetchRes.ok) {
-        return res.status(502).json({ detail: `Failed to download spreadsheet: ${fetchRes.statusText}` });
-      }
-      const csvText = await fetchRes.text();
-
-      // Parse CSV
-      const lines = csvText.split(/\r?\n/);
-      const rows = lines
-        .map((line) => {
-          const result: string[] = [];
-          let current = "";
-          let inQuotes = false;
-          for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-              inQuotes = !inQuotes;
-            } else if (char === "," && !inQuotes) {
-              result.push(current.trim());
-              current = "";
-            } else {
-              current += char;
-            }
-          }
-          result.push(current.trim());
-          return result.map((val) => val.replace(/^"|"$/g, "").trim());
-        })
-        .filter((row) => row.length > 0 && row.some((cell) => cell !== ""));
-
-      if (rows.length < 2) {
-        return res.status(400).json({ detail: "Downloaded spreadsheet contains no data rows." });
-      }
-
-      // Extract headers from Row 1 and normalize them (BOM-safe and case/space-safe)
-      const headers = rows[0].map((h) => (h || "").trim().replace(/^\uFEFF/, ""));
-      const dataRows = rows.slice(1);
-
-      // 2. Clear dynamic tables to mirror deletions!
-      await prisma.$transaction([
-        prisma.syncLog.deleteMany(),
-        prisma.ticketHistory.deleteMany(),
-        prisma.initialVisit.deleteMany(),
-        prisma.serviceReport.deleteMany(),
-        prisma.materialRequestItem.deleteMany(),
-        prisma.materialRequest.deleteMany(),
-        prisma.ticketAssignment.deleteMany(),
-        prisma.ticket.deleteMany(),
-        prisma.complaint.deleteMany(),
-        prisma.masterInstallation.deleteMany()
-      ]);
-
-      // Seed/retrieve role and admin user to map associations
-      const adminRole = await prisma.role.upsert({
-        where: { name: "Admin" },
-        update: {},
-        create: { name: "Admin", description: "System Administrator" }
-      });
-
-      const adminUser = await prisma.user.upsert({
-        where: { email: "admin@claro.com" },
-        update: {},
-        create: {
-          id: "admin-default-id",
-          email: "admin@claro.com",
-          fullName: "System Admin",
-          passwordHash: "$2b$10$tM2LdskVp1Jz/KxX9.jXKeX6g9nK1lH4B2FwYxI49lG1E1E1E1E1E",
-          roleId: adminRole.id
-        }
-      });
-      const adminId = adminUser.id;
-
-      // --- OPTIMIZATION STEP 1: Pre-process States, Districts, and Engineers ---
-      // Collect unique state names, district names, and engineers from sheet rows
-      const uniqueStates = new Set<string>();
-      const stateDistricts = new Map<string, Set<string>>(); // state -> districts
-      const uniqueEngineers = new Map<string, { name: string, email: string, phone: string }>(); // email -> details
-
-      for (const row of dataRows) {
-        const getVal = (colName: string) => {
-          const idx = headers.indexOf(colName);
-          return (idx !== -1 && row[idx] !== undefined && row[idx] !== null) ? row[idx].toString() : "";
-        };
-        const stateStr = getVal("State") || "Maharashtra";
-        const districtStr = getVal("District") || "Unknown";
-        if (stateStr) {
-          uniqueStates.add(stateStr);
-          if (!stateDistricts.has(stateStr)) {
-            stateDistricts.set(stateStr, new Set());
-          }
-          if (districtStr) {
-            stateDistricts.get(stateStr)!.add(districtStr);
-          }
-        }
-
-        const assignedEngineerName = getVal("Assigned Engineer Name");
-        const engineerEmail = getVal("Engineer Email") || getVal("Assigned Engineer Email");
-        const engineerPhone = getVal("Engineer Phone") || getVal("Assigned Engineer Phone");
-        if (assignedEngineerName && engineerEmail && engineerEmail.trim() !== "" && engineerEmail.includes("@")) {
-          const emailTrim = engineerEmail.trim().toLowerCase();
-          if (!uniqueEngineers.has(emailTrim)) {
-            uniqueEngineers.set(emailTrim, {
-              name: assignedEngineerName.trim(),
-              email: emailTrim,
-              phone: engineerPhone.trim() || "N/A"
-            });
-          }
-        }
-      }
-
-      // Upsert States in batch / sequence
-      const stateMap = new Map<string, string>(); // name -> id
-      for (const stateName of uniqueStates) {
-        const state = await prisma.state.upsert({
-          where: { name: stateName },
-          update: {},
-          create: { name: stateName }
-        });
-        stateMap.set(stateName, state.id);
-      }
-
-      // Upsert Districts in sequence
-      const districtMap = new Map<string, string>(); // "stateId:districtName" -> id
-      for (const [stateName, districts] of stateDistricts.entries()) {
-        const stateId = stateMap.get(stateName)!;
-        for (const districtName of districts) {
-          const district = await prisma.district.upsert({
-            where: {
-              uq_state_district: {
-                stateId,
-                name: districtName
-              }
-            },
-            update: {},
-            create: {
-              stateId,
-              name: districtName
-            }
-          });
-          districtMap.set(`${stateId}:${districtName}`, district.id);
-        }
-      }
-
-      // Upsert Engineers dynamically (makes sure they are registered on the platform)
-      const engineerMap = new Map<string, string>(); // email -> id
-      for (const eng of uniqueEngineers.values()) {
-        const dbEng = await prisma.engineer.upsert({
-          where: { email: eng.email },
-          update: { name: eng.name, phone: eng.phone },
-          create: { name: eng.name, email: eng.email, phone: eng.phone }
-        });
-        engineerMap.set(eng.email, dbEng.id);
-      }
-
-      // --- OPTIMIZATION STEP 3: Batch Data Arrays ---
-      const masterInstallations: any[] = [];
-      const complaints: any[] = [];
-      const tickets: any[] = [];
-      const ticketAssignments: any[] = [];
-      const initialVisits: any[] = [];
-      const serviceReports: any[] = [];
-      const materialRequests: any[] = [];
-      const materialRequestItems: any[] = [];
-      const ticketHistories: any[] = [];
-
-      const processedInstallations = new Set<string>();
-
-      const safeDate = (dStr?: string) => {
-        if (!dStr) return null;
-        const parsed = new Date(dStr.trim());
-        return isNaN(parsed.getTime()) ? null : parsed;
-      };
-
-      for (let index = 0; index < dataRows.length; index++) {
-        const row = dataRows[index];
-        const rowNumber = index + 2;
-
-        const getVal = (colName: string) => {
-          const idx = headers.indexOf(colName);
-          return (idx !== -1 && row[idx] !== undefined && row[idx] !== null) ? row[idx].toString() : "";
-        };
-
-        const applicationId = getVal("Application ID");
-        const clientName = getVal("Customer Name") || "Unknown Client";
-        const districtStr = getVal("District") || "Unknown";
-        const stateStr = getVal("State") || "Maharashtra";
-        const installationDateStr = getVal("Installation Date");
-        const complaintDateStr = getVal("Created At") || getVal("Date");
-        const complainantPhone = getVal("Customer Phone") || "N/A";
-        const complaintType = getVal("Issue Type") || "General";
-        const description = getVal("Description") || "";
-        const ticketNumberStr = getVal("Ticket ID");
-        const assignedEngineerName = getVal("Assigned Engineer Name");
-        const initialVisitDateStr = getVal("Initial Visit Date");
-        const serviceReportDateStr = getVal("Service Report Date");
-        const materialStatusStr = getVal("Material Status");
-        const engineerEmail = getVal("Engineer Email") || getVal("Assigned Engineer Email");
-
-        let finalAppId = applicationId ? applicationId.trim().toUpperCase() : "";
-        if (!finalAppId) {
-          // Skip the row only if it is completely empty of major fields
-          if (!clientName && !ticketNumberStr && !complaintDateStr) {
-            continue;
-          }
-          finalAppId = "N/A";
-        }
-
-        const stateId = (finalAppId !== "N/A" && stateStr) ? stateMap.get(stateStr) : null;
-        const districtId = (finalAppId !== "N/A" && stateId && districtStr) ? districtMap.get(`${stateId}:${districtStr}`) : null;
-
-        const installationDate = safeDate(installationDateStr);
-        const complaintDate = safeDate(complaintDateStr) || new Date();
-
-        // 1. Master Installation
-        if (!processedInstallations.has(finalAppId)) {
-          masterInstallations.push({
-            applicationId: finalAppId,
-            clientName: finalAppId === "N/A" ? "N/A" : clientName.trim(),
-            address: finalAppId === "N/A" ? "N/A" : `${districtStr.trim()}, ${stateStr.trim()}`,
-            stateId,
-            districtId,
-            installationDate
-          });
-          processedInstallations.add(finalAppId);
-        }
-
-        // Construct dynamic metadata map for all 40+ columns
-        const rowMetadata: Record<string, any> = {};
-        headers.forEach((h, i) => {
-          rowMetadata[h] = row[i] || "";
-        });
-
-        // 2. Complaint
-        const complaintId = randomUUID();
-        complaints.push({
-          id: complaintId,
-          formResponseId: rowNumber.toString(),
-          applicationId: finalAppId,
-          complainantName: clientName.trim(),
-          complainantPhone: complainantPhone.trim(),
-          complaintType: complaintType.trim(),
-          description: description.trim(),
-          submissionTimestamp: complaintDate,
-          syncStatus: "SYNCED",
-          metadata: rowMetadata
-        });
-
-        // Engineer lookup
-        let engineerDbId = null;
-        if (engineerEmail && engineerEmail.trim() !== "") {
-          engineerDbId = engineerMap.get(engineerEmail.trim().toLowerCase()) || null;
-        }
-
-        // Stage
-        const liveStageStr = getVal("Live Stage");
-        let liveStage = "RECEIVED";
-        const mappedStage = normalizeStatus(liveStageStr);
-        if (mappedStage) {
-          liveStage = mappedStage;
-        } else {
-          if (serviceReportDateStr) {
-            liveStage = "RESOLVED";
-          } else if (materialStatusStr && materialStatusStr !== "N/A") {
-            liveStage = "MATERIAL_REQUESTED";
-          } else if (initialVisitDateStr) {
-            liveStage = "INITIAL_VISIT_COMPLETED";
-          } else if (engineerDbId) {
-            liveStage = "ASSIGNED";
-          }
-        }
-
-        // Priority
-        const priorityStr = getVal("Priority");
-        let priority = "STANDARD";
-        const mappedPriority = normalizePriority(priorityStr);
-        if (mappedPriority) {
-          priority = mappedPriority;
-        }
-
-        const ticketNumber = ticketNumberStr || `CLR-${rowNumber}-${Date.now().toString().slice(-4)}`;
-
-        // 3. Ticket
-        const ticketId = randomUUID();
-        tickets.push({
-          id: ticketId,
-          ticketNumber,
-          complaintId,
-          status: liveStage,
-          priority: priority,
-          createdAt: complaintDate,
-          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
-          metadata: rowMetadata
-        });
-
-        // 4. Assignment
-        if (engineerDbId) {
-          ticketAssignments.push({
-            id: randomUUID(),
-            ticketId,
-            engineerId: engineerDbId,
-            assignedAt: complaintDate
-          });
-        }
-
-        // 5. Initial Visit
-        if (initialVisitDateStr && engineerDbId) {
-          initialVisits.push({
-            id: randomUUID(),
-            ticketId,
-            engineerId: engineerDbId,
-            visitDate: safeDate(initialVisitDateStr) || complaintDate,
-            remarks: "Completed diagnostic check on pump."
-          });
-        }
-
-        // 6. Service Report
-        if (serviceReportDateStr) {
-          serviceReports.push({
-            id: randomUUID(),
-            ticketId,
-            reportDate: safeDate(serviceReportDateStr) || complaintDate,
-            workDone: "Inspected wiring and restored system operation.",
-            status: "COMPLETED"
-          });
-        }
-
-        // 7. Material Request
-        if (materialStatusStr && materialStatusStr !== "N/A" && engineerDbId) {
-          const materialRequestId = randomUUID();
-          materialRequests.push({
-            id: materialRequestId,
-            ticketId,
-            requestedBy: engineerDbId,
-            status: materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase(),
-            remarks: "Required solar components."
-          });
-          materialRequestItems.push({
-            id: randomUUID(),
-            materialRequestId,
-            itemName: "Solar Pump Controller Card",
-            quantity: 1
-          });
-        }
-
-        // 8. Ticket History
-        ticketHistories.push({
-          id: randomUUID(),
-          ticketId,
-          newStatus: liveStage,
-          changeSummary: "Ticket synced from Google Sheets."
-        });
-      }
-
-      // --- OPTIMIZATION STEP 4: Write all processed batches ---
-      // We run these in a single Prisma transaction using createMany for maximum speed!
-      await prisma.$transaction([
-        prisma.masterInstallation.createMany({ data: masterInstallations, skipDuplicates: true }),
-        prisma.complaint.createMany({ data: complaints, skipDuplicates: true }),
-        prisma.ticket.createMany({ data: tickets, skipDuplicates: true }),
-        prisma.ticketAssignment.createMany({ data: ticketAssignments, skipDuplicates: true }),
-        prisma.initialVisit.createMany({ data: initialVisits, skipDuplicates: true }),
-        prisma.serviceReport.createMany({ data: serviceReports, skipDuplicates: true }),
-        prisma.materialRequest.createMany({ data: materialRequests, skipDuplicates: true }),
-        prisma.materialRequestItem.createMany({ data: materialRequestItems, skipDuplicates: true }),
-        prisma.ticketHistory.createMany({ data: ticketHistories, skipDuplicates: true })
-      ]);
-
-      console.log(`🎉 SUCCESS: Optimized Full Database Sync completed. Installations: ${masterInstallations.length}, Tickets: ${tickets.length}`);
+      const counts = await syncService.syncFullSheet(SPREADSHEET_ID, gid);
       return res.status(200).json({
         detail: "Spreadsheet database sync complete!",
-        installationsCount: masterInstallations.length,
-        ticketsCount: tickets.length
+        installationsCount: counts.installationsCount,
+        ticketsCount: counts.ticketsCount
       });
-
     } catch (err: any) {
       console.error("Full spreadsheet sync error:", err);
       return res.status(500).json({ detail: `Full Sync Error: ${err.message}` });
