@@ -162,62 +162,79 @@ async function run() {
       const materialStatusStr = row[31]?.trim();
       const liveStageStr = row[37]?.trim()?.toUpperCase() || "RECEIVED";
 
-      if (!appId || !clientName || !stateName || !districtName || !ticketId) {
-        continue;
+      let finalAppId = appId ? appId.trim().toUpperCase() : "";
+      if (!finalAppId) {
+        if (!clientName && !ticketId && !createdAtStr) {
+          continue;
+        }
+        finalAppId = "N/A";
+      }
+
+      let finalTicketId = ticketId ? ticketId.trim() : "";
+      if (!finalTicketId) {
+        finalTicketId = `CLR-LEG-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`;
       }
 
       // Skip duplicate ticket numbers to prevent constraint failure crashes
       const existingTicket = await prisma.ticket.findUnique({
-        where: { ticketNumber: ticketId }
+        where: { ticketNumber: finalTicketId }
       });
       if (existingTicket) {
         continue;
       }
 
       // 1. Upsert State and District
-      const state = await prisma.state.upsert({
-        where: { name: stateName },
-        update: {},
-        create: { name: stateName }
-      });
+      let stateId = null;
+      let districtId = null;
+      if (finalAppId !== "N/A" && stateName) {
+        const state = await prisma.state.upsert({
+          where: { name: stateName },
+          update: {},
+          create: { name: stateName }
+        });
+        stateId = state.id;
 
-      const district = await prisma.district.upsert({
-        where: {
-          uq_state_district: {
-            stateId: state.id,
-            name: districtName
-          }
-        },
-        update: {},
-        create: {
-          stateId: state.id,
-          name: districtName
+        if (districtName) {
+          const district = await prisma.district.upsert({
+            where: {
+              uq_state_district: {
+                stateId: state.id,
+                name: districtName
+              }
+            },
+            update: {},
+            create: {
+              stateId: state.id,
+              name: districtName
+            }
+          });
+          districtId = district.id;
         }
-      });
+      }
 
       // 2. Upsert Master Installation
-      const fullAddress = `${villageName ? villageName + " (Village), " : ""}${blockName ? blockName + " (Block), " : ""}${districtName}, ${stateName}`;
+      const fullAddress = finalAppId === "N/A" ? "N/A" : `${villageName ? villageName + " (Village), " : ""}${blockName ? blockName + " (Block), " : ""}${districtName}, ${stateName}`;
       
-      if (!processedInstallations.has(appId)) {
+      if (!processedInstallations.has(finalAppId)) {
         await prisma.masterInstallation.upsert({
-          where: { applicationId: appId },
+          where: { applicationId: finalAppId },
           update: {
-            clientName: clientName,
-            installationDate: safeDate(instDateStr),
+            clientName: finalAppId === "N/A" ? "N/A" : clientName,
+            installationDate: finalAppId === "N/A" ? null : safeDate(instDateStr),
             address: fullAddress,
-            stateId: state.id,
-            districtId: district.id
+            stateId,
+            districtId
           },
           create: {
-            applicationId: appId,
-            clientName: clientName,
-            installationDate: safeDate(instDateStr),
+            applicationId: finalAppId,
+            clientName: finalAppId === "N/A" ? "N/A" : clientName,
+            installationDate: finalAppId === "N/A" ? null : safeDate(instDateStr),
             address: fullAddress,
-            stateId: state.id,
-            districtId: district.id
+            stateId,
+            districtId
           }
         });
-        processedInstallations.add(appId);
+        processedInstallations.add(finalAppId);
         installationsCount++;
       }
 
@@ -246,8 +263,8 @@ async function run() {
               name: engName,
               email: engEmail,
               phone: engPhone,
-              stateId: state.id,
-              districtId: district.id
+              stateId,
+              districtId
             }
           });
           processedEngineers.add(engEmail);

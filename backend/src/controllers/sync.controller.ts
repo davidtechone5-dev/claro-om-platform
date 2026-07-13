@@ -921,30 +921,32 @@ export const syncController = {
         const materialStatusStr = getVal("Material Status");
         const engineerEmail = getVal("Engineer Email") || getVal("Assigned Engineer Email");
 
-        if (!applicationId) continue;
+        let finalAppId = applicationId ? applicationId.trim().toUpperCase() : "";
+        if (!finalAppId) {
+          // Skip the row only if it is completely empty of major fields
+          if (!clientName && !ticketNumberStr && !complaintDateStr) {
+            continue;
+          }
+          finalAppId = "N/A";
+        }
 
-        const stateId = stateMap.get(stateStr)!;
-        const districtId = districtMap.get(`${stateId}:${districtStr}`)!;
+        const stateId = (finalAppId !== "N/A" && stateStr) ? stateMap.get(stateStr) : null;
+        const districtId = (finalAppId !== "N/A" && stateId && districtStr) ? districtMap.get(`${stateId}:${districtStr}`) : null;
 
         const installationDate = safeDate(installationDateStr);
         const complaintDate = safeDate(complaintDateStr) || new Date();
 
         // 1. Master Installation
-        if (!processedInstallations.has(applicationId)) {
+        if (!processedInstallations.has(finalAppId)) {
           masterInstallations.push({
-            applicationId,
-            clientName,
-            address: `${districtStr}, ${stateStr}`,
+            applicationId: finalAppId,
+            clientName: finalAppId === "N/A" ? "N/A" : clientName.trim(),
+            address: finalAppId === "N/A" ? "N/A" : `${districtStr.trim()}, ${stateStr.trim()}`,
             stateId,
             districtId,
             installationDate
           });
-          processedInstallations.add(applicationId);
-        }
-
-        // Skip if no complaint date and no ticket ID
-        if (!complaintDateStr && !ticketNumberStr) {
-          continue;
+          processedInstallations.add(finalAppId);
         }
 
         // Construct dynamic metadata map for all 40+ columns
@@ -958,11 +960,11 @@ export const syncController = {
         complaints.push({
           id: complaintId,
           formResponseId: rowNumber.toString(),
-          applicationId,
-          complainantName: clientName,
-          complainantPhone,
-          complaintType,
-          description,
+          applicationId: finalAppId,
+          complainantName: clientName.trim(),
+          complainantPhone: complainantPhone.trim(),
+          complaintType: complaintType.trim(),
+          description: description.trim(),
           submissionTimestamp: complaintDate,
           syncStatus: "SYNCED",
           metadata: rowMetadata
