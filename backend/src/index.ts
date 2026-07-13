@@ -6,6 +6,7 @@ import { errorHandler } from "./middleware/error.js";
 import { authController } from "./controllers/auth.controller.js";
 import { syncController } from "./controllers/sync.controller.js";
 import { ticketController } from "./controllers/ticket.controller.js";
+import { prisma } from "./db.js";
 
 const app = express();
 
@@ -28,6 +29,21 @@ app.get("/", (req, res) => {
 
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "OK", timestamp: new Date() });
+});
+
+app.get("/api/v1/sync/status", async (req, res) => {
+  try {
+    const complaints = await prisma.complaint.count();
+    const tickets = await prisma.ticket.count();
+    const installations = await prisma.masterInstallation.count();
+    const assignments = await prisma.ticketAssignment.count();
+    const history = await prisma.ticketHistory.count();
+    const engineers = await prisma.engineer.count();
+    const users = await prisma.user.count();
+    res.status(200).json({ complaints, tickets, installations, assignments, history, engineers, users });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 2. Authentication routes
