@@ -1,13 +1,19 @@
 import { prisma } from "../db.js";
+import { Prisma } from "@prisma/client";
 
 export const assignmentService = {
   /**
-   * Automates engineer assignment for a newly created ticket based on geographic coverage and workload constraints
+   * Automates engineer assignment for a newly created ticket based on geographic coverage and workload constraints.
+   * Supports an optional Prisma transaction client.
    */
-  async assignEngineerToTicket(ticketId: string, applicationId: string): Promise<string | null> {
+  async assignEngineerToTicket(
+    ticketId: string,
+    applicationId: string,
+    tx: Prisma.TransactionClient = prisma
+  ): Promise<string | null> {
     try {
       // 1. Get the installation state & district details
-      const installation = await prisma.masterInstallation.findFirst({
+      const installation = await tx.masterInstallation.findFirst({
         where: { 
           applicationId: applicationId,
           deletedAt: null
@@ -29,7 +35,7 @@ export const assignmentService = {
       }
 
       // 2. Find eligible engineers matching state, district, active status and valid joining date (created_at <= now)
-      const eligibleEngineers = await prisma.engineer.findMany({
+      const eligibleEngineers = await tx.engineer.findMany({
         where: {
           stateId: installation.stateId,
           districtId: installation.districtId,
@@ -54,7 +60,7 @@ export const assignmentService = {
 
       for (const eng of eligibleEngineers) {
         // Tickets assigned today
-        const todayAssignmentsCount = await prisma.ticketAssignment.count({
+        const todayAssignmentsCount = await tx.ticketAssignment.count({
           where: {
             engineerId: eng.id,
             assignedAt: {
@@ -70,7 +76,7 @@ export const assignmentService = {
         }
 
         // Current total active tickets (status NOT in RESOLVED, CLOSED, ARCHIVED)
-        const activeTicketsCount = await prisma.ticketAssignment.count({
+        const activeTicketsCount = await tx.ticketAssignment.count({
           where: {
             engineerId: eng.id,
             ticket: {
@@ -100,7 +106,7 @@ export const assignmentService = {
       const selectedEngineer = engineerMetrics[0].engineer;
 
       // 5. Create Ticket Assignment record
-      await prisma.ticketAssignment.create({
+      await tx.ticketAssignment.create({
         data: {
           ticketId: ticketId,
           engineerId: selectedEngineer.id,
@@ -109,13 +115,13 @@ export const assignmentService = {
       });
 
       // Update ticket status to ASSIGNED
-      await prisma.ticket.update({
+      await tx.ticket.update({
         where: { id: ticketId },
         data: { status: "ASSIGNED" }
       });
 
       // Write to ticket history
-      await prisma.ticketHistory.create({
+      await tx.ticketHistory.create({
         data: {
           ticketId: ticketId,
           newStatus: "ASSIGNED",
