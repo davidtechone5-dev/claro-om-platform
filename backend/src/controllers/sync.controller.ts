@@ -708,7 +708,12 @@ export const syncController = {
    */
   async syncFullSheet(req: Request, res: Response) {
     let SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
+    let gid = "";
     if (SPREADSHEET_ID && SPREADSHEET_ID.includes("docs.google.com/spreadsheets")) {
+      const gidMatch = SPREADSHEET_ID.match(/[?&]gid=([^&#]+)/);
+      if (gidMatch) {
+        gid = gidMatch[1];
+      }
       const match = SPREADSHEET_ID.match(/\/d\/([^/]+)/);
       if (match) {
         SPREADSHEET_ID = match[1];
@@ -723,7 +728,7 @@ export const syncController = {
       console.log("🔄 Starting Full Database Clean Sync from Google Sheets...");
 
       // 1. Fetch spreadsheet content as CSV
-      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv`;
+      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
       const fetchRes = await fetch(url);
       if (!fetchRes.ok) {
         return res.status(502).json({ detail: `Failed to download spreadsheet: ${fetchRes.statusText}` });
@@ -921,30 +926,32 @@ export const syncController = {
         const materialStatusStr = getVal("Material Status");
         const engineerEmail = getVal("Engineer Email") || getVal("Assigned Engineer Email");
 
-        if (!applicationId) continue;
+        let finalAppId = applicationId ? applicationId.trim() : "";
+        if (!finalAppId) {
+          // Skip the row only if it is completely empty of major fields
+          if (!clientName && !ticketNumberStr && !complaintDateStr) {
+            continue;
+          }
+          finalAppId = "N/A";
+        }
 
-        const stateId = stateMap.get(stateStr)!;
-        const districtId = districtMap.get(`${stateId}:${districtStr}`)!;
+        const stateId = (finalAppId !== "N/A" && stateStr) ? stateMap.get(stateStr) : null;
+        const districtId = (finalAppId !== "N/A" && stateId && districtStr) ? districtMap.get(`${stateId}:${districtStr}`) : null;
 
         const installationDate = safeDate(installationDateStr);
         const complaintDate = safeDate(complaintDateStr) || new Date();
 
         // 1. Master Installation
-        if (!processedInstallations.has(applicationId)) {
+        if (!processedInstallations.has(finalAppId)) {
           masterInstallations.push({
-            applicationId,
-            clientName,
-            address: `${districtStr}, ${stateStr}`,
+            applicationId: finalAppId,
+            clientName: finalAppId === "N/A" ? "N/A" : clientName,
+            address: finalAppId === "N/A" ? "N/A" : `${districtStr}, ${stateStr}`,
             stateId,
             districtId,
             installationDate
           });
-          processedInstallations.add(applicationId);
-        }
-
-        // Skip if no complaint date and no ticket ID
-        if (!complaintDateStr && !ticketNumberStr) {
-          continue;
+          processedInstallations.add(finalAppId);
         }
 
         // Construct dynamic metadata map for all 40+ columns
@@ -958,7 +965,7 @@ export const syncController = {
         complaints.push({
           id: complaintId,
           formResponseId: rowNumber.toString(),
-          applicationId,
+          applicationId: finalAppId,
           complainantName: clientName,
           complainantPhone,
           complaintType,

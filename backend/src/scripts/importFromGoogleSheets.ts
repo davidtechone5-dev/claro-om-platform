@@ -5,7 +5,12 @@ import dotenv from "dotenv";
 dotenv.config();
 
 let SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
+let GID = "";
 if (SPREADSHEET_ID && SPREADSHEET_ID.includes("docs.google.com/spreadsheets")) {
+  const gidMatch = SPREADSHEET_ID.match(/[?&]gid=([^&#]+)/);
+  if (gidMatch) {
+    GID = gidMatch[1];
+  }
   const match = SPREADSHEET_ID.match(/\/d\/([^/]+)/);
   if (match) {
     SPREADSHEET_ID = match[1];
@@ -51,8 +56,8 @@ function safeDate(dateStr?: string): Date | null {
 /**
  * Downloads the sheet tab as CSV
  */
-async function fetchSheetAsCSV(spreadsheetId: string): Promise<string> {
-  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`;
+async function fetchSheetAsCSV(spreadsheetId: string, gid: string = ""): Promise<string> {
+  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch sheet: ${response.statusText}`);
@@ -98,7 +103,7 @@ async function run() {
     });
 
     console.log("📥 Downloading consolidated sheet data...");
-    const sheetCSV = await fetchSheetAsCSV(SPREADSHEET_ID);
+    const sheetCSV = await fetchSheetAsCSV(SPREADSHEET_ID, GID);
     const rows = parseCSV(sheetCSV);
     
     // Slice off header row
@@ -162,68 +167,86 @@ async function run() {
       const materialStatusStr = row[31]?.trim();
       const liveStageStr = row[37]?.trim()?.toUpperCase() || "RECEIVED";
 
-      if (!appId || !clientName || !stateName || !districtName || !ticketId) {
-        continue;
+      let finalAppId = appId ? appId.trim() : "";
+      if (!finalAppId) {
+        if (!clientName && !ticketId && !createdAtStr) {
+          continue;
+        }
+        finalAppId = "N/A";
+      }
+
+      let finalTicketId = ticketId ? ticketId.trim() : "";
+      if (!finalTicketId) {
+        finalTicketId = `CLR-LEG-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`;
       }
 
       // Skip duplicate ticket numbers to prevent constraint failure crashes
       const existingTicket = await prisma.ticket.findUnique({
-        where: { ticketNumber: ticketId }
+        where: { ticketNumber: finalTicketId }
       });
       if (existingTicket) {
         continue;
       }
 
       // 1. Upsert State and District
-      const state = await prisma.state.upsert({
-        where: { name: stateName },
-        update: {},
-        create: { name: stateName }
-      });
+      let stateId = null;
+      let districtId = null;
+      if (finalAppId !== "N/A" && stateName) {
+        const state = await prisma.state.upsert({
+          where: { name: stateName },
+          update: {},
+          create: { name: stateName }
+        });
+        stateId = state.id;
 
-      const district = await prisma.district.upsert({
-        where: {
-          uq_state_district: {
-            stateId: state.id,
-            name: districtName
-          }
-        },
-        update: {},
-        create: {
-          stateId: state.id,
-          name: districtName
+        if (districtName) {
+          const district = await prisma.district.upsert({
+            where: {
+              uq_state_district: {
+                stateId: state.id,
+                name: districtName
+              }
+            },
+            update: {},
+            create: {
+              stateId: state.id,
+              name: districtName
+            }
+          });
+          districtId = district.id;
         }
-      });
+      }
 
       // 2. Upsert Master Installation
-      const fullAddress = `${villageName ? villageName + " (Village), " : ""}${blockName ? blockName + " (Block), " : ""}${districtName}, ${stateName}`;
+      const fullAddress = finalAppId === "N/A" ? "N/A" : `${villageName ? villageName + " (Village), " : ""}${blockName ? blockName + " (Block), " : ""}${districtName}, ${stateName}`;
       
-      if (!processedInstallations.has(appId)) {
+      if (!processedInstallations.has(finalAppId)) {
         await prisma.masterInstallation.upsert({
-          where: { applicationId: appId },
+          where: { applicationId: finalAppId },
           update: {
-            clientName: clientName,
-            installationDate: safeDate(instDateStr),
+            clientName: finalAppId === "N/A" ? "N/A" : clientName,
+            installationDate: finalAppId === "N/A" ? null : safeDate(instDateStr),
             address: fullAddress,
-            stateId: state.id,
-            districtId: district.id
+            stateId,
+            districtId
           },
           create: {
-            applicationId: appId,
-            clientName: clientName,
-            installationDate: safeDate(instDateStr),
+            applicationId: finalAppId,
+            clientName: finalAppId === "N/A" ? "N/A" : clientName,
+            installationDate: finalAppId === "N/A" ? null : safeDate(instDateStr),
             address: fullAddress,
-            stateId: state.id,
-            districtId: district.id
+            stateId,
+            districtId
           }
         });
-        processedInstallations.add(appId);
+        processedInstallations.add(finalAppId);
         installationsCount++;
       }
 
       // 3. Upsert Engineer
       let engineerDbId = "";
       if (engName && engEmail && engPhone) {
+        // If stateId is null, map it to a default or check
         let engProfile = await prisma.engineer.findUnique({
           where: { email: engEmail }
         });
@@ -246,8 +269,8 @@ async function run() {
               name: engName,
               email: engEmail,
               phone: engPhone,
-              stateId: state.id,
-              districtId: district.id
+              stateId,
+              districtId
             }
           });
           processedEngineers.add(engEmail);
@@ -260,8 +283,8 @@ async function run() {
       const complaintDate = safeDate(createdAtStr) || new Date();
       const complaint = await prisma.complaint.create({
         data: {
-          applicationId: appId,
-          complainantName: clientName,
+          applicationId: finalAppId,
+          complainantName: finalAppId === "N/A" ? "N/A" : clientName,
           complainantPhone: clientPhone,
           complaintType: issueType,
           description: description,
@@ -274,7 +297,7 @@ async function run() {
       // Live stage could map to states (RECEIVED, ASSIGNED, INITIAL_VISIT_COMPLETED, RESOLVED, etc.)
       const ticket = await prisma.ticket.create({
         data: {
-          ticketNumber: ticketId,
+          ticketNumber: finalTicketId,
           complaintId: complaint.id,
           status: liveStageStr === "RESOLVED" ? "RESOLVED" : liveStageStr,
           priority: priorityStr,
