@@ -926,7 +926,7 @@ export const syncController = {
         const materialStatusStr = getVal("Material Status");
         const engineerEmail = getVal("Engineer Email") || getVal("Assigned Engineer Email");
 
-        let finalAppId = applicationId ? applicationId.trim() : "";
+        let finalAppId = applicationId ? applicationId.trim().toUpperCase() : "";
         if (!finalAppId) {
           // Skip the row only if it is completely empty of major fields
           if (!clientName && !ticketNumberStr && !complaintDateStr) {
@@ -945,8 +945,8 @@ export const syncController = {
         if (!processedInstallations.has(finalAppId)) {
           masterInstallations.push({
             applicationId: finalAppId,
-            clientName: finalAppId === "N/A" ? "N/A" : clientName,
-            address: finalAppId === "N/A" ? "N/A" : `${districtStr}, ${stateStr}`,
+            clientName: finalAppId === "N/A" ? "N/A" : clientName.trim(),
+            address: finalAppId === "N/A" ? "N/A" : `${districtStr.trim()}, ${stateStr.trim()}`,
             stateId,
             districtId,
             installationDate
@@ -966,10 +966,10 @@ export const syncController = {
           id: complaintId,
           formResponseId: rowNumber.toString(),
           applicationId: finalAppId,
-          complainantName: clientName,
-          complainantPhone,
-          complaintType,
-          description,
+          complainantName: clientName.trim(),
+          complainantPhone: complainantPhone.trim(),
+          complaintType: complaintType.trim(),
+          description: description.trim(),
           submissionTimestamp: complaintDate,
           syncStatus: "SYNCED",
           metadata: rowMetadata

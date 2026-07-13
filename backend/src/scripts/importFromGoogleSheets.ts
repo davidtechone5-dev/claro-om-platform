@@ -167,7 +167,7 @@ async function run() {
       const materialStatusStr = row[31]?.trim();
       const liveStageStr = row[37]?.trim()?.toUpperCase() || "RECEIVED";
 
-      let finalAppId = appId ? appId.trim() : "";
+      let finalAppId = appId ? appId.trim().toUpperCase() : "";
       if (!finalAppId) {
         if (!clientName && !ticketId && !createdAtStr) {
           continue;
