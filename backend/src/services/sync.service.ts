@@ -341,16 +341,30 @@ export const syncService = {
     }
 
     // Write all transactional objects
-    await prisma.$transaction([
-      prisma.complaint.createMany({ data: complaints, skipDuplicates: true }),
-      prisma.ticket.createMany({ data: tickets, skipDuplicates: true }),
-      prisma.ticketAssignment.createMany({ data: ticketAssignments, skipDuplicates: true }),
-      prisma.initialVisit.createMany({ data: initialVisits, skipDuplicates: true }),
-      prisma.serviceReport.createMany({ data: serviceReports, skipDuplicates: true }),
-      prisma.materialRequest.createMany({ data: materialRequests, skipDuplicates: true }),
-      prisma.materialRequestItem.createMany({ data: materialRequestItems, skipDuplicates: true }),
-      prisma.ticketHistory.createMany({ data: ticketHistories, skipDuplicates: true })
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.complaint.createMany({ data: complaints, skipDuplicates: true }),
+        prisma.ticket.createMany({ data: tickets, skipDuplicates: true }),
+        prisma.ticketAssignment.createMany({ data: ticketAssignments, skipDuplicates: true }),
+        prisma.initialVisit.createMany({ data: initialVisits, skipDuplicates: true }),
+        prisma.serviceReport.createMany({ data: serviceReports, skipDuplicates: true }),
+        prisma.materialRequest.createMany({ data: materialRequests, skipDuplicates: true }),
+        prisma.materialRequestItem.createMany({ data: materialRequestItems, skipDuplicates: true }),
+        prisma.ticketHistory.createMany({ data: ticketHistories, skipDuplicates: true })
+      ]);
+    } catch (txError: any) {
+      const ticketIds = new Set(tickets.map(t => t.id));
+      const badAssignments = ticketAssignments.filter(ta => !ticketIds.has(ta.ticketId));
+      const badVisits = initialVisits.filter(v => !ticketIds.has(v.ticketId));
+      const badReports = serviceReports.filter(r => !ticketIds.has(r.ticketId));
+      const badMRs = materialRequests.filter(m => !ticketIds.has(m.ticketId));
+
+      const ticketsDb = await prisma.ticket.findMany({ select: { id: true, ticketNumber: true } });
+      const ticketsDbIds = new Set(ticketsDb.map(t => t.id));
+      const dbMissedAssignments = ticketAssignments.filter(ta => !ticketsDbIds.has(ta.ticketId));
+
+      throw new Error(`Write transaction failed: ${txError.message}. Diagnostics: In-memory tickets count: ${tickets.length}, assignments: ${ticketAssignments.length}, badAssignments in-memory: ${badAssignments.length}, badVisits: ${badVisits.length}, badReports: ${badReports.length}, badMRs: ${badMRs.length}, DB tickets count: ${ticketsDb.length}, assignments not matching DB: ${dbMissedAssignments.length}`);
+    }
 
     return {
       installationsCount: processedInstallations.size,
