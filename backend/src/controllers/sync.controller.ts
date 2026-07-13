@@ -592,11 +592,12 @@ export const syncController = {
    * POST /api/v1/sync/full
    */
   async syncFullSheet(req: Request, res: Response) {
-    let SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
-    let gid = "";
+    let SPREADSHEET_ID = (req.body.spreadsheetId || req.query.spreadsheetId || process.env.GOOGLE_SPREADSHEET_ID) as string;
+    let gid = (req.body.gid || req.query.gid || "") as string;
+
     if (SPREADSHEET_ID && SPREADSHEET_ID.includes("docs.google.com/spreadsheets")) {
       const gidMatch = SPREADSHEET_ID.match(/[?&]gid=([^&#]+)/);
-      if (gidMatch) {
+      if (gidMatch && !gid) {
         gid = gidMatch[1];
       }
       const match = SPREADSHEET_ID.match(/\/d\/([^/]+)/);
