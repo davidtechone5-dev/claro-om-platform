@@ -708,7 +708,12 @@ export const syncController = {
    */
   async syncFullSheet(req: Request, res: Response) {
     let SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
+    let gid = "";
     if (SPREADSHEET_ID && SPREADSHEET_ID.includes("docs.google.com/spreadsheets")) {
+      const gidMatch = SPREADSHEET_ID.match(/[?&]gid=([^&#]+)/);
+      if (gidMatch) {
+        gid = gidMatch[1];
+      }
       const match = SPREADSHEET_ID.match(/\/d\/([^/]+)/);
       if (match) {
         SPREADSHEET_ID = match[1];
@@ -723,7 +728,7 @@ export const syncController = {
       console.log("🔄 Starting Full Database Clean Sync from Google Sheets...");
 
       // 1. Fetch spreadsheet content as CSV
-      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv`;
+      const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ""}`;
       const fetchRes = await fetch(url);
       if (!fetchRes.ok) {
         return res.status(502).json({ detail: `Failed to download spreadsheet: ${fetchRes.statusText}` });
