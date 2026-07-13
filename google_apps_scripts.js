@@ -200,7 +200,7 @@ function onOpen() {
   ui.createMenu('Claro Sync 🔄')
     .addItem('Sync Selected Row', 'syncSelectedRowManually')
     .addSeparator()
-    .addItem('Sync Whole Spreadsheet (Clean Reload)', 'syncSpreadsheetFull')
+    .addItem('Sync Whole Spreadsheet (Pull & Clean Reload)', 'syncAllSheets')
     .addToUi();
 }
 
@@ -306,7 +306,7 @@ function syncRowOnEdit(e) {
   var range = e.range;
   var sheet = range.getSheet();
   var sheetName = sheet.getName().toLowerCase();
-  
+
   // Only sync if the edit occurs on the main Consolidated complaints/tickets sheet
   if (sheetName.includes("complaint") || sheetName.includes("ticket") || sheetName.includes("consolidated")) {
     var row = range.getRow();
@@ -316,5 +316,61 @@ function syncRowOnEdit(e) {
       var endpoint = CONFIG.API_BASE_URL + "/sync/complaint";
       sendWebhook(endpoint, data, sheet, row);
     }
+  }
+}
+
+/**
+ * Sync all sheets from the Source Spreadsheet to the Destination Spreadsheet,
+ * and trigger a clean database reload on the backend website.
+ */
+function syncAllSheets() {
+  var SOURCE_ID = "1Bs2jVPrm0g__cIOg8V80BbGhI6gzqCnw-bYAPissV8s";
+  var DESTINATION_ID = "14ZCBnG-TBiS9wYrOe9zRkVJfdKt1vvVhZTZGUi842gw";
+
+  Logger.log("Starting sheet synchronization from Source to Destination...");
+  var sourceSS = SpreadsheetApp.openById(SOURCE_ID);
+  var destSS = SpreadsheetApp.openById(DESTINATION_ID);
+
+  var sourceSheets = sourceSS.getSheets();
+
+  sourceSheets.forEach(function(sourceSheet) {
+    var sheetName = sourceSheet.getName();
+    var destSheet = destSS.getSheetByName(sheetName);
+
+    if (!destSheet) {
+      destSheet = destSS.insertSheet(sheetName);
+    }
+
+    destSheet.clear();
+
+    var range = sourceSheet.getDataRange();
+    var values = range.getValues();
+
+    if (values.length && values[0].length) {
+      destSheet
+        .getRange(1, 1, values.length, values[0].length)
+        .setValues(values);
+    }
+  });
+
+  Logger.log("Sheets sync completed. Triggering live backend database reload...");
+  
+  var url = CONFIG.API_BASE_URL + "/sync/full";
+  var options = {
+    "method": "post",
+    "contentType": "application/json",
+    "headers": {
+      "X-Claro-Secret": CONFIG.API_SECRET_TOKEN
+    },
+    "muteHttpExceptions": true
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(url, options);
+    var responseCode = response.getResponseCode();
+    Logger.log("Backend response code: " + responseCode);
+    Logger.log("Backend response body: " + response.getContentText());
+  } catch (error) {
+    Logger.log("Failed to sync backend: " + error.toString());
   }
 }

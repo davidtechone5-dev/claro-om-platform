@@ -758,7 +758,7 @@ export const syncController = {
       }
 
       // Extract headers from Row 1 and normalize them (BOM-safe and case/space-safe)
-      const headers = rows[0].map((h) => h.trim().replace(/^\uFEFF/, ""));
+      const headers = rows[0].map((h) => (h || "").trim().replace(/^\uFEFF/, ""));
       const dataRows = rows.slice(1);
 
       // 2. Clear dynamic tables to mirror deletions!
@@ -804,7 +804,7 @@ export const syncController = {
       for (const row of dataRows) {
         const getVal = (colName: string) => {
           const idx = headers.indexOf(colName);
-          return idx !== -1 ? row[idx] : "";
+          return (idx !== -1 && row[idx] !== undefined && row[idx] !== null) ? row[idx].toString() : "";
         };
         const stateStr = getVal("State") || "Maharashtra";
         const districtStr = getVal("District") || "Unknown";
@@ -902,7 +902,7 @@ export const syncController = {
 
         const getVal = (colName: string) => {
           const idx = headers.indexOf(colName);
-          return idx !== -1 ? row[idx] : "";
+          return (idx !== -1 && row[idx] !== undefined && row[idx] !== null) ? row[idx].toString() : "";
         };
 
         const applicationId = getVal("Application ID");
