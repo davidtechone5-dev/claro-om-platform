@@ -1084,15 +1084,15 @@ export const syncController = {
       // --- OPTIMIZATION STEP 4: Write all processed batches ---
       // We run these in a single Prisma transaction using createMany for maximum speed!
       await prisma.$transaction([
-        prisma.masterInstallation.createMany({ data: masterInstallations }),
-        prisma.complaint.createMany({ data: complaints }),
-        prisma.ticket.createMany({ data: tickets }),
-        prisma.ticketAssignment.createMany({ data: ticketAssignments }),
-        prisma.initialVisit.createMany({ data: initialVisits }),
-        prisma.serviceReport.createMany({ data: serviceReports }),
-        prisma.materialRequest.createMany({ data: materialRequests }),
-        prisma.materialRequestItem.createMany({ data: materialRequestItems }),
-        prisma.ticketHistory.createMany({ data: ticketHistories })
+        prisma.masterInstallation.createMany({ data: masterInstallations, skipDuplicates: true }),
+        prisma.complaint.createMany({ data: complaints, skipDuplicates: true }),
+        prisma.ticket.createMany({ data: tickets, skipDuplicates: true }),
+        prisma.ticketAssignment.createMany({ data: ticketAssignments, skipDuplicates: true }),
+        prisma.initialVisit.createMany({ data: initialVisits, skipDuplicates: true }),
+        prisma.serviceReport.createMany({ data: serviceReports, skipDuplicates: true }),
+        prisma.materialRequest.createMany({ data: materialRequests, skipDuplicates: true }),
+        prisma.materialRequestItem.createMany({ data: materialRequestItems, skipDuplicates: true }),
+        prisma.ticketHistory.createMany({ data: ticketHistories, skipDuplicates: true })
       ]);
 
       console.log(`🎉 SUCCESS: Optimized Full Database Sync completed. Installations: ${masterInstallations.length}, Tickets: ${tickets.length}`);
