@@ -619,6 +619,9 @@ export const syncController = {
       });
     } catch (err: any) {
       console.error("Full spreadsheet sync error:", err);
+      if (err.message && err.message.includes("SyncInProgress")) {
+        return res.status(409).json({ detail: "A spreadsheet synchronization is already in progress. Please try again in a few moments." });
+      }
       return res.status(500).json({ detail: `Full Sync Error: ${err.message}` });
     }
   }
