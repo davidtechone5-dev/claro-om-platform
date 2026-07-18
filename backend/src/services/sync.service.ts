@@ -827,7 +827,8 @@ export const syncService = {
         }
 
       }, {
-        timeout: 60000 // Fast 60s timeout for incremental upsert
+        maxWait: 10000,
+        timeout: 180000
       });
 
       return {
