@@ -213,7 +213,16 @@ export const ticketController = {
   async listEngineers(req: any, res: Response) {
     try {
       const engineers = await prisma.engineer.findMany({
-        where: { isActive: true, deletedAt: null },
+        where: { 
+          isActive: true, 
+          deletedAt: null,
+          NOT: {
+            OR: [
+              { name: { contains: "Alex", mode: "insensitive" } },
+              { email: { contains: "engineer@claro.com", mode: "insensitive" } }
+            ]
+          }
+        },
         orderBy: { name: "asc" }
       });
       return res.status(200).json(engineers);

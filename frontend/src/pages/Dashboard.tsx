@@ -291,7 +291,11 @@ export function Dashboard({ user }: DashboardProps) {
           setTickets(ticketsData.tickets || []);
           
           const engineersData = await api.getEngineers();
-          setEngineers(engineersData || []);
+          const cleanEngineers = (engineersData || []).filter((eng: any) => 
+            !eng.name.toLowerCase().includes("alex") && 
+            !eng.email.toLowerCase().includes("engineer@claro.com")
+          );
+          setEngineers(cleanEngineers);
         }
       } catch (err) {
         console.error("Error loading dashboard data:", err);
