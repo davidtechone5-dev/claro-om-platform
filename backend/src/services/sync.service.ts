@@ -42,10 +42,36 @@ function areObjectsEqual(a: any, b: any): boolean {
   return true;
 }
 
+/**
+ * Split array into smaller chunks for batch processing
+ */
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Execute update operations in batched non-interactive transactions to prevent P2028 timeouts
+ */
+async function runBatchedTransactions<T>(
+  items: T[],
+  operation: (item: T) => any,
+  batchSize = 20
+): Promise<void> {
+  for (const batch of chunkArray(items, batchSize)) {
+    await prisma.$transaction(
+      batch.map(item => operation(item))
+    );
+  }
+}
+
 export const syncService = {
   /**
    * Synchronizes the entire database from the consolidated Google Sheets CSV export.
-   * Runs as a single atomic transaction to prevent partial states.
+   * Uses batched array transactions to prevent long-lived interactive transaction timeouts (P2028).
    */
   async syncFullSheet(spreadsheetId: string, gid?: string) {
     if (isSyncing) {
@@ -384,7 +410,7 @@ export const syncService = {
           const ticketId = existingTicket.id;
           const complaintId = existingTicket.complaintId;
 
-          // Accurate Key-Order Independent Metadata Comparison
+          // Accurate Metadata Comparison
           const metadataChanged = !areObjectsEqual(existingTicket.metadata, rowMetadata);
 
           // Check if complaint fields changed
@@ -637,199 +663,203 @@ export const syncService = {
         }
       }
 
-      // 6. Execute non-destructive atomic updates inside ONE interactive transaction
-      await prisma.$transaction(async (tx) => {
-        // Create new States
-        if (newStates.size > 0) {
-          await tx.state.createMany({
-            data: Array.from(newStates.values()),
-            skipDuplicates: true
-          });
-        }
+      // 6. Execute direct bulk creations
+      if (newStates.size > 0) {
+        await prisma.state.createMany({ data: Array.from(newStates.values()), skipDuplicates: true });
+      }
 
-        // Create new Districts
-        if (newDistricts.size > 0) {
-          await tx.district.createMany({
-            data: Array.from(newDistricts.values()),
-            skipDuplicates: true
-          });
-        }
+      if (newDistricts.size > 0) {
+        await prisma.district.createMany({ data: Array.from(newDistricts.values()), skipDuplicates: true });
+      }
 
-        // Create new Operational Engineers (only operational records, no User login accounts)
-        if (newEngineers.size > 0) {
-          await tx.engineer.createMany({
-            data: Array.from(newEngineers.values()),
-            skipDuplicates: true
-          });
-        }
+      if (newEngineers.size > 0) {
+        await prisma.engineer.createMany({ data: Array.from(newEngineers.values()), skipDuplicates: true });
+      }
 
-        // Master Installations
-        if (installationsToCreate.length > 0) {
-          await tx.masterInstallation.createMany({
-            data: installationsToCreate,
-            skipDuplicates: true
-          });
-        }
-        for (const inst of installationsToUpdate) {
-          await tx.masterInstallation.update({
-            where: { id: inst.id },
-            data: {
-              clientName: inst.clientName,
-              address: inst.address,
-              stateId: inst.stateId,
-              districtId: inst.districtId,
-              installationDate: inst.installationDate
-            }
-          });
-        }
+      if (installationsToCreate.length > 0) {
+        await prisma.masterInstallation.createMany({ data: installationsToCreate, skipDuplicates: true });
+      }
 
-        // Complaints
-        if (complaintsToCreate.length > 0) {
-          await tx.complaint.createMany({ data: complaintsToCreate, skipDuplicates: true });
-        }
-        for (const c of complaintsToUpdate) {
-          await tx.complaint.update({
-            where: { id: c.id },
-            data: {
-              complainantName: c.complainantName,
-              complainantPhone: c.complainantPhone,
-              complaintType: c.complaintType,
-              description: c.description,
-              metadata: c.metadata
-            }
-          });
-        }
+      if (complaintsToCreate.length > 0) {
+        await prisma.complaint.createMany({ data: complaintsToCreate, skipDuplicates: true });
+      }
 
-        // Tickets
-        if (ticketsToCreate.length > 0) {
-          await tx.ticket.createMany({ data: ticketsToCreate, skipDuplicates: true });
-        }
-        for (const t of ticketsToUpdate) {
-          await tx.ticket.update({
-            where: { id: t.id },
-            data: {
-              status: t.status,
-              priority: t.priority,
-              metadata: t.metadata
-            }
-          });
-        }
+      if (ticketsToCreate.length > 0) {
+        await prisma.ticket.createMany({ data: ticketsToCreate, skipDuplicates: true });
+      }
 
-        // Ticket Assignments (Create, Update & Delete cleared)
-        if (ticketAssignmentsToCreate.length > 0) {
-          await tx.ticketAssignment.createMany({ data: ticketAssignmentsToCreate, skipDuplicates: true });
-        }
-        for (const a of ticketAssignmentsToUpdate) {
-          await tx.ticketAssignment.update({
-            where: { id: a.id },
-            data: { engineerId: a.engineerId, assignedAt: a.assignedAt }
-          });
-        }
-        if (ticketAssignmentsToDelete.length > 0) {
-          await tx.ticketAssignment.deleteMany({ where: { id: { in: ticketAssignmentsToDelete } } });
-        }
+      if (ticketAssignmentsToCreate.length > 0) {
+        await prisma.ticketAssignment.createMany({ data: ticketAssignmentsToCreate, skipDuplicates: true });
+      }
 
-        // Initial Visits (Create, Update & Delete cleared)
-        if (initialVisitsToCreate.length > 0) {
-          await tx.initialVisit.createMany({ data: initialVisitsToCreate, skipDuplicates: true });
-        }
-        for (const v of initialVisitsToUpdate) {
-          await tx.initialVisit.update({
-            where: { id: v.id },
-            data: { engineerId: v.engineerId, visitDate: v.visitDate }
-          });
-        }
-        if (initialVisitsToDelete.length > 0) {
-          await tx.initialVisit.deleteMany({ where: { id: { in: initialVisitsToDelete } } });
-        }
+      if (initialVisitsToCreate.length > 0) {
+        await prisma.initialVisit.createMany({ data: initialVisitsToCreate, skipDuplicates: true });
+      }
 
-        // Service Reports (Create, Update & Delete cleared)
-        if (serviceReportsToCreate.length > 0) {
-          await tx.serviceReport.createMany({ data: serviceReportsToCreate, skipDuplicates: true });
-        }
-        for (const sr of serviceReportsToUpdate) {
-          await tx.serviceReport.update({
-            where: { id: sr.id },
-            data: { reportDate: sr.reportDate }
-          });
-        }
-        if (serviceReportsToDelete.length > 0) {
-          await tx.serviceReport.deleteMany({ where: { id: { in: serviceReportsToDelete } } });
-        }
+      if (serviceReportsToCreate.length > 0) {
+        await prisma.serviceReport.createMany({ data: serviceReportsToCreate, skipDuplicates: true });
+      }
 
-        // Material Requests & Items (Create, Update & Delete cleared)
-        if (materialRequestsToCreate.length > 0) {
-          await tx.materialRequest.createMany({ data: materialRequestsToCreate, skipDuplicates: true });
-        }
-        if (materialRequestItemsToCreate.length > 0) {
-          await tx.materialRequestItem.createMany({ data: materialRequestItemsToCreate, skipDuplicates: true });
-        }
-        for (const mr of materialRequestsToUpdate) {
-          await tx.materialRequest.update({
-            where: { id: mr.id },
-            data: {
-              status: mr.status,
-              requestedBy: mr.requestedBy
-            }
-          });
-        }
-        if (materialRequestsToDelete.length > 0) {
-          await tx.materialRequestItem.deleteMany({
-            where: {
-              materialRequestId: {
-                in: materialRequestsToDelete
+      if (materialRequestsToCreate.length > 0) {
+        await prisma.materialRequest.createMany({ data: materialRequestsToCreate, skipDuplicates: true });
+      }
+
+      if (materialRequestItemsToCreate.length > 0) {
+        await prisma.materialRequestItem.createMany({ data: materialRequestItemsToCreate, skipDuplicates: true });
+      }
+
+      if (ticketHistoriesToCreate.length > 0) {
+        await prisma.ticketHistory.createMany({ data: ticketHistoriesToCreate, skipDuplicates: true });
+      }
+
+      // 7. Execute updates using batched non-interactive transactions (prevents P2028 timeouts)
+      if (installationsToUpdate.length > 0) {
+        await runBatchedTransactions(
+          installationsToUpdate,
+          inst =>
+            prisma.masterInstallation.update({
+              where: { id: inst.id },
+              data: {
+                clientName: inst.clientName,
+                address: inst.address,
+                stateId: inst.stateId,
+                districtId: inst.districtId,
+                installationDate: inst.installationDate
               }
-            }
-          });
-          await tx.materialRequest.deleteMany({
-            where: {
-              id: {
-                in: materialRequestsToDelete
+            })
+        );
+      }
+
+      if (complaintsToUpdate.length > 0) {
+        await runBatchedTransactions(
+          complaintsToUpdate,
+          c =>
+            prisma.complaint.update({
+              where: { id: c.id },
+              data: {
+                complainantName: c.complainantName,
+                complainantPhone: c.complainantPhone,
+                complaintType: c.complaintType,
+                description: c.description,
+                metadata: c.metadata
               }
-            }
-          });
+            })
+        );
+      }
+
+      if (ticketsToUpdate.length > 0) {
+        await runBatchedTransactions(
+          ticketsToUpdate,
+          t =>
+            prisma.ticket.update({
+              where: { id: t.id },
+              data: {
+                status: t.status,
+                priority: t.priority,
+                metadata: t.metadata
+              }
+            })
+        );
+      }
+
+      if (ticketAssignmentsToUpdate.length > 0) {
+        await runBatchedTransactions(
+          ticketAssignmentsToUpdate,
+          a =>
+            prisma.ticketAssignment.update({
+              where: { id: a.id },
+              data: { engineerId: a.engineerId, assignedAt: a.assignedAt }
+            })
+        );
+      }
+
+      if (initialVisitsToUpdate.length > 0) {
+        await runBatchedTransactions(
+          initialVisitsToUpdate,
+          v =>
+            prisma.initialVisit.update({
+              where: { id: v.id },
+              data: { engineerId: v.engineerId, visitDate: v.visitDate }
+            })
+        );
+      }
+
+      if (serviceReportsToUpdate.length > 0) {
+        await runBatchedTransactions(
+          serviceReportsToUpdate,
+          sr =>
+            prisma.serviceReport.update({
+              where: { id: sr.id },
+              data: { reportDate: sr.reportDate }
+            })
+        );
+      }
+
+      if (materialRequestsToUpdate.length > 0) {
+        await runBatchedTransactions(
+          materialRequestsToUpdate,
+          mr =>
+            prisma.materialRequest.update({
+              where: { id: mr.id },
+              data: {
+                status: mr.status,
+                requestedBy: mr.requestedBy
+              }
+            })
+        );
+      }
+
+      // 8. Execute deletions for cleared sub-entities
+      if (ticketAssignmentsToDelete.length > 0) {
+        await prisma.ticketAssignment.deleteMany({ where: { id: { in: ticketAssignmentsToDelete } } });
+      }
+
+      if (initialVisitsToDelete.length > 0) {
+        await prisma.initialVisit.deleteMany({ where: { id: { in: initialVisitsToDelete } } });
+      }
+
+      if (serviceReportsToDelete.length > 0) {
+        await prisma.serviceReport.deleteMany({ where: { id: { in: serviceReportsToDelete } } });
+      }
+
+      if (materialRequestsToDelete.length > 0) {
+        await prisma.materialRequestItem.deleteMany({
+          where: { materialRequestId: { in: materialRequestsToDelete } }
+        });
+        await prisma.materialRequest.deleteMany({
+          where: { id: { in: materialRequestsToDelete } }
+        });
+      }
+
+      // 9. 🛡️ Strict Deletion Safety Guard before deleting missing tickets
+      const ABSOLUTE_MINIMUM_ROWS = 600;
+      const percentageMinimum = Math.floor(existingTickets.length * 0.9);
+
+      const minimumSafeRows =
+        existingTickets.length === 0
+          ? 1
+          : Math.min(ABSOLUTE_MINIMUM_ROWS, percentageMinimum);
+
+      const isSafeToPrune = processedTicketNumbers.size >= minimumSafeRows;
+
+      if (isSafeToPrune) {
+        const ticketsToDelete = existingTickets.filter(t => !processedTicketNumbers.has(t.ticketNumber.toUpperCase().trim()));
+        if (ticketsToDelete.length > 0) {
+          const deleteIds = ticketsToDelete.map(t => t.id);
+          const deleteComplaintIds = ticketsToDelete.map(t => t.complaintId);
+
+          await prisma.ticketHistory.deleteMany({ where: { ticketId: { in: deleteIds } } });
+          await prisma.initialVisit.deleteMany({ where: { ticketId: { in: deleteIds } } });
+          await prisma.serviceReport.deleteMany({ where: { ticketId: { in: deleteIds } } });
+          await prisma.materialRequestItem.deleteMany({ where: { materialRequest: { ticketId: { in: deleteIds } } } });
+          await prisma.materialRequest.deleteMany({ where: { ticketId: { in: deleteIds } } });
+          await prisma.ticketAssignment.deleteMany({ where: { ticketId: { in: deleteIds } } });
+          await prisma.ticket.deleteMany({ where: { id: { in: deleteIds } } });
+          await prisma.complaint.deleteMany({ where: { id: { in: deleteComplaintIds } } });
         }
-
-        // Ticket History
-        if (ticketHistoriesToCreate.length > 0) {
-          await tx.ticketHistory.createMany({ data: ticketHistoriesToCreate, skipDuplicates: true });
-        }
-
-        // 🛡️ Strict Deletion Safety Guard before deleting missing tickets
-        const ABSOLUTE_MINIMUM_ROWS = 600;
-        const percentageMinimum = Math.floor(existingTickets.length * 0.9);
-
-        const minimumSafeRows =
-          existingTickets.length === 0
-            ? 1
-            : Math.min(ABSOLUTE_MINIMUM_ROWS, percentageMinimum);
-
-        const isSafeToPrune =
-          processedTicketNumbers.size >= minimumSafeRows;
-
-        if (isSafeToPrune) {
-          const ticketsToDelete = existingTickets.filter(t => !processedTicketNumbers.has(t.ticketNumber.toUpperCase().trim()));
-          if (ticketsToDelete.length > 0) {
-            const deleteIds = ticketsToDelete.map(t => t.id);
-            const deleteComplaintIds = ticketsToDelete.map(t => t.complaintId);
-
-            await tx.ticketHistory.deleteMany({ where: { ticketId: { in: deleteIds } } });
-            await tx.initialVisit.deleteMany({ where: { ticketId: { in: deleteIds } } });
-            await tx.serviceReport.deleteMany({ where: { ticketId: { in: deleteIds } } });
-            await tx.materialRequestItem.deleteMany({ where: { materialRequest: { ticketId: { in: deleteIds } } } });
-            await tx.materialRequest.deleteMany({ where: { ticketId: { in: deleteIds } } });
-            await tx.ticketAssignment.deleteMany({ where: { ticketId: { in: deleteIds } } });
-            await tx.ticket.deleteMany({ where: { id: { in: deleteIds } } });
-            await tx.complaint.deleteMany({ where: { id: { in: deleteComplaintIds } } });
-          }
-        } else if (existingTickets.length > 0) {
-          console.warn(`⚠️ Safety Guard Triggered: Parsed row count (${processedTicketNumbers.size}) is lower than minimum safe threshold (${minimumSafeRows}). Skipped deleting missing tickets to preserve database integrity.`);
-        }
-
-      }, {
-        maxWait: 10000,
-        timeout: 180000
-      });
+      } else if (existingTickets.length > 0) {
+        console.warn(`⚠️ Safety Guard Triggered: Parsed row count (${processedTicketNumbers.size}) is lower than minimum safe threshold (${minimumSafeRows}). Skipped deleting missing tickets to preserve database integrity.`);
+      }
 
       return {
         installationsCount: processedInstallations.size,
