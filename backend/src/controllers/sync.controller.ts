@@ -614,8 +614,7 @@ export const syncController = {
       const counts = await syncService.syncFullSheet(SPREADSHEET_ID, gid);
       return res.status(200).json({
         detail: "Spreadsheet database sync complete!",
-        installationsCount: counts.installationsCount,
-        ticketsCount: counts.ticketsCount
+        ...counts
       });
     } catch (err: any) {
       console.error("Full spreadsheet sync error:", err);

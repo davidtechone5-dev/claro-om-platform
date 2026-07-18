@@ -2,8 +2,6 @@ import { prisma } from "../db.js";
 import { parseCSV } from "../utils/csv.js";
 import { parseSafeDate } from "../utils/date.js";
 import { normalizeStatus, normalizePriority } from "../utils/status.js";
-import { engineerService } from "./engineer.service.js";
-import { ticketService } from "./ticket.service.js";
 import { randomUUID } from "crypto";
 
 // Mutex lock to prevent concurrent full sheet syncs
@@ -27,6 +25,21 @@ async function fetchWithRetry(url: string, retries = 3, delay = 1000): Promise<R
     }
   }
   throw new Error(`Failed to fetch spreadsheet after ${retries} attempts.`);
+}
+
+/**
+ * Compare two JSON metadata objects for key-value equality independent of insertion order
+ */
+function areObjectsEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    if (String(a[key] ?? "") !== String(b[key] ?? "")) return false;
+  }
+  return true;
 }
 
 export const syncService = {
@@ -56,6 +69,25 @@ export const syncService = {
       const headers = rows[0].map(h => h.trim().replace(/^\uFEFF/, ""));
       const dataRows = rows.slice(1);
 
+      // Validate required spreadsheet headers
+      const requiredHeaders = [
+        "Ticket ID",
+        "Application ID",
+        "Customer Name",
+        "State",
+        "District"
+      ];
+
+      const missingHeaders = requiredHeaders.filter(
+        header => !headers.includes(header)
+      );
+
+      if (missingHeaders.length > 0) {
+        throw new Error(
+          `Spreadsheet validation failed. Missing required headers: ${missingHeaders.join(", ")}`
+        );
+      }
+
       // 3. Preload all necessary tables to eliminate loops with inline awaits
       const states = await prisma.state.findMany();
       const stateMap = new Map<string, string>(); // name.toLowerCase() -> id
@@ -65,14 +97,10 @@ export const syncService = {
       const districtMap = new Map<string, string>(); // stateId:name.toLowerCase() -> id
       districts.forEach(d => districtMap.set(`${d.stateId}:${d.name.toLowerCase().trim()}`, d.id));
 
-      const engineers = await prisma.engineer.findMany({ include: { user: true } });
+      const engineers = await prisma.engineer.findMany();
       const engineerMap = new Map<string, string>(); // email.toLowerCase() -> engineerId
-      const userMap = new Map<string, string>(); // email.toLowerCase() -> userId
       engineers.forEach(e => {
         engineerMap.set(e.email.toLowerCase().trim(), e.id);
-        if (e.user) {
-          userMap.set(e.email.toLowerCase().trim(), e.user.id);
-        }
       });
 
       const installations = await prisma.masterInstallation.findMany();
@@ -81,52 +109,91 @@ export const syncService = {
         installationMap.set(inst.applicationId.toLowerCase().trim(), inst);
       });
 
-      // 4. Preload/Upsert Roles
+      // Preload existing tickets for non-destructive incremental upserts
+      const existingTickets = await prisma.ticket.findMany({
+        include: {
+          complaint: true,
+          assignments: { where: { deletedAt: null } },
+          initialVisits: { where: { deletedAt: null } },
+          serviceReports: { where: { deletedAt: null } },
+          materialRequests: { where: { deletedAt: null }, include: { items: true } }
+        }
+      });
+      const existingTicketMap = new Map<string, any>(); // ticketNumber.toUpperCase() -> ticket record
+      existingTickets.forEach(t => existingTicketMap.set(t.ticketNumber.toUpperCase().trim(), t));
+
+      // 4. Preload/Upsert Admin Role and Admin User
       const adminRole = await prisma.role.upsert({
         where: { name: "Admin" },
         update: {},
-        create: { name: "Admin", description: "Administrator with full control" }
-      });
-
-      const engineerRole = await prisma.role.upsert({
-        where: { name: "Engineer" },
-        update: {},
-        create: { name: "Engineer", description: "Field Engineer" }
-      });
-
-      const defaultPassword = await import("bcryptjs").then(b => b.default.hashSync("admin123", 10));
-      const engPassword = await import("bcryptjs").then(b => b.default.hashSync("engineer123", 10));
-
-      // Ensure default system admin user exists
-      await prisma.user.upsert({
-        where: { email: "admin@claro.com" },
-        update: {},
         create: {
-          email: "admin@claro.com",
-          fullName: "System Admin",
-          passwordHash: defaultPassword,
-          roleId: adminRole.id
+          name: "Admin",
+          description: "Administrator with full control"
         }
       });
 
-      // Maps to collect and deduplicate in-memory entities for bulk creation
+      const existingAdmin = await prisma.user.findUnique({
+        where: { email: "admin@claro.com" }
+      });
+
+      if (!existingAdmin) {
+        const bcrypt = await import("bcryptjs");
+        const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD || "admin123";
+
+        if (!adminPassword) {
+          throw new Error(
+            "DEFAULT_ADMIN_PASSWORD environment variable is required."
+          );
+        }
+
+        const adminPasswordHash = bcrypt.default.hashSync(
+          adminPassword,
+          10
+        );
+
+        await prisma.user.create({
+          data: {
+            email: "admin@claro.com",
+            fullName: "System Admin",
+            passwordHash: adminPasswordHash,
+            roleId: adminRole.id
+          }
+        });
+      }
+
+      // Maps & collections to track incremental changes
       const newStates = new Map<string, any>(); // name.toLowerCase() -> state data
       const newDistricts = new Map<string, any>(); // stateId:name.toLowerCase() -> district data
-      const newUsers = new Map<string, any>(); // email -> user data
-      const newEngineers = new Map<string, any>(); // email -> engineer data
+      const newEngineers = new Map<string, any>(); // email -> operational engineer record
 
       const installationsToCreate: any[] = [];
       const installationsToUpdate: any[] = [];
       const processedInstallations = new Set<string>();
 
-      const complaints: any[] = [];
-      const tickets: any[] = [];
-      const ticketAssignments: any[] = [];
-      const initialVisits: any[] = [];
-      const serviceReports: any[] = [];
-      const materialRequests: any[] = [];
-      const materialRequestItems: any[] = [];
-      const ticketHistories: any[] = [];
+      const complaintsToCreate: any[] = [];
+      const complaintsToUpdate: any[] = [];
+
+      const ticketsToCreate: any[] = [];
+      const ticketsToUpdate: any[] = [];
+
+      const ticketAssignmentsToCreate: any[] = [];
+      const ticketAssignmentsToUpdate: any[] = [];
+      const ticketAssignmentsToDelete: string[] = [];
+
+      const initialVisitsToCreate: any[] = [];
+      const initialVisitsToUpdate: any[] = [];
+      const initialVisitsToDelete: string[] = [];
+
+      const serviceReportsToCreate: any[] = [];
+      const serviceReportsToUpdate: any[] = [];
+      const serviceReportsToDelete: string[] = [];
+
+      const materialRequestsToCreate: any[] = [];
+      const materialRequestItemsToCreate: any[] = [];
+      const materialRequestsToUpdate: any[] = [];
+      const materialRequestsToDelete: string[] = [];
+
+      const ticketHistoriesToCreate: any[] = [];
 
       const processedTicketNumbers = new Set<string>();
 
@@ -166,7 +233,7 @@ export const syncService = {
           finalAppId = `UNKNOWN-APP-ROW-${rowNumber}`;
         }
 
-        // Map State, generating dynamic UUIDs for newly encountered states in memory
+        // Map State
         let stateId = stateMap.get(stateStr.toLowerCase().trim()) || null;
         if (stateStr && !stateId) {
           const cleanState = stateStr.toLowerCase().trim();
@@ -180,7 +247,7 @@ export const syncService = {
           }
         }
 
-        // Map District, generating dynamic UUIDs for newly encountered districts in memory
+        // Map District
         let districtId = (stateId && districtStr) ? districtMap.get(`${stateId}:${districtStr.toLowerCase().trim()}`) : null;
         if (stateId && districtStr && !districtId) {
           const districtKey = `${stateId}:${districtStr.toLowerCase().trim()}`;
@@ -216,12 +283,20 @@ export const syncService = {
               installationDate
             });
           } else {
+            const existingInstallationTime = existing.installationDate
+              ? new Date(existing.installationDate).getTime()
+              : null;
+
+            const incomingInstallationTime = installationDate
+              ? installationDate.getTime()
+              : null;
+
             const hasChanged =
               existing.clientName !== finalClientName ||
               existing.address !== finalAddress ||
               existing.stateId !== stateId ||
               existing.districtId !== districtId ||
-              (existing.installationDate && installationDate && new Date(existing.installationDate).getTime() !== installationDate.getTime());
+              existingInstallationTime !== incomingInstallationTime;
 
             if (hasChanged) {
               installationsToUpdate.push({
@@ -243,55 +318,30 @@ export const syncService = {
           rowMetadata[h] = row[i] || "";
         });
 
-        // Add Complaint record
-        const complaintId = randomUUID();
-        complaints.push({
-          id: complaintId,
-          formResponseId: rowNumber.toString(),
-          applicationId: finalAppId,
-          complainantName: clientName.trim(),
-          complainantPhone: complainantPhone.trim(),
-          complaintType: complaintType.trim(),
-          description: description.trim(),
-          submissionTimestamp: complaintDate,
-          syncStatus: "SYNCED",
-          metadata: rowMetadata
-        });
-
-        // Prepare new user/engineer accounts in memory
+        // Prepare operational engineer record in memory (no User login account created)
         let engineerDbId: string | null = null;
         if (engineerEmail && engineerEmail.trim()) {
           const cleanEmail = engineerEmail.trim().toLowerCase();
           engineerDbId = engineerMap.get(cleanEmail) || null;
 
           if (!engineerDbId && assignedEngineerName) {
-            let preparedEng = newEngineers.get(cleanEmail);
-            if (!preparedEng) {
-              const userId = userMap.get(cleanEmail) || randomUUID();
+            let preparedEngineer = newEngineers.get(cleanEmail);
+
+            if (!preparedEngineer) {
               engineerDbId = randomUUID();
 
-              if (!userMap.has(cleanEmail)) {
-                newUsers.set(cleanEmail, {
-                  id: userId,
-                  email: cleanEmail,
-                  fullName: assignedEngineerName,
-                  passwordHash: engPassword,
-                  roleId: engineerRole.id
-                });
-              }
-
-              preparedEng = {
+              preparedEngineer = {
                 id: engineerDbId,
-                userId,
                 name: assignedEngineerName.trim(),
                 email: cleanEmail,
                 phone: engineerPhone.trim(),
                 stateId,
                 districtId
               };
-              newEngineers.set(cleanEmail, preparedEng);
+
+              newEngineers.set(cleanEmail, preparedEngineer);
             } else {
-              engineerDbId = preparedEng.id;
+              engineerDbId = preparedEngineer.id;
             }
           }
         }
@@ -312,7 +362,7 @@ export const syncService = {
         const priorityStr = getVal("Priority");
         const priority = normalizePriority(priorityStr) || "STANDARD";
 
-        // Generate deterministic ticket number using row number and complaint/submission date prefix
+        // Generate deterministic ticket number
         let finalTicketNumber = ticketNumberStr ? ticketNumberStr.trim().toUpperCase() : "";
         if (!finalTicketNumber) {
           const yy = complaintDate.getFullYear().toString().slice(-2);
@@ -327,79 +377,267 @@ export const syncService = {
         }
         processedTicketNumbers.add(finalTicketNumber);
 
-        const ticketId = randomUUID();
-        tickets.push({
-          id: ticketId,
-          ticketNumber: finalTicketNumber,
-          complaintId,
-          status: liveStage,
-          priority: priority,
-          createdAt: complaintDate,
-          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
-          metadata: rowMetadata
-        });
+        // Check if ticket exists in database for incremental update
+        const existingTicket = existingTicketMap.get(finalTicketNumber);
 
-        // Assignments array
-        if (engineerDbId) {
-          ticketAssignments.push({
+        if (existingTicket) {
+          const ticketId = existingTicket.id;
+          const complaintId = existingTicket.complaintId;
+
+          // Accurate Key-Order Independent Metadata Comparison
+          const metadataChanged = !areObjectsEqual(existingTicket.metadata, rowMetadata);
+
+          // Check if complaint fields changed
+          const complaintChanged =
+            existingTicket.complaint.complainantName !== clientName.trim() ||
+            existingTicket.complaint.complainantPhone !== complainantPhone.trim() ||
+            existingTicket.complaint.complaintType !== complaintType.trim() ||
+            existingTicket.complaint.description !== description.trim() ||
+            metadataChanged;
+
+          if (complaintChanged) {
+            complaintsToUpdate.push({
+              id: complaintId,
+              complainantName: clientName.trim(),
+              complainantPhone: complainantPhone.trim(),
+              complaintType: complaintType.trim(),
+              description: description.trim(),
+              metadata: rowMetadata
+            });
+          }
+
+          // Check if ticket status or priority changed
+          const ticketChanged =
+            existingTicket.status !== liveStage ||
+            existingTicket.priority !== priority ||
+            metadataChanged;
+
+          if (ticketChanged) {
+            ticketsToUpdate.push({
+              id: ticketId,
+              status: liveStage,
+              priority,
+              metadata: rowMetadata
+            });
+
+            // Generate status history entry ONLY on actual status changes
+            if (existingTicket.status !== liveStage) {
+              ticketHistoriesToCreate.push({
+                id: randomUUID(),
+                ticketId,
+                oldStatus: existingTicket.status,
+                newStatus: liveStage,
+                changeSummary: `Status updated from ${existingTicket.status} to ${liveStage} via Google Sheets sync.`
+              });
+            }
+          }
+
+          // Assignment handling & Cleared Fields handling
+          const currentAssignment = existingTicket.assignments[0];
+          if (engineerDbId) {
+            if (!currentAssignment) {
+              ticketAssignmentsToCreate.push({
+                id: randomUUID(),
+                ticketId,
+                engineerId: engineerDbId,
+                assignedAt: complaintDate
+              });
+            } else if (currentAssignment.engineerId !== engineerDbId) {
+              ticketAssignmentsToUpdate.push({
+                id: currentAssignment.id,
+                engineerId: engineerDbId,
+                assignedAt: complaintDate
+              });
+            }
+          } else if (currentAssignment) {
+            // Handle cleared engineer assignment field
+            ticketAssignmentsToDelete.push(currentAssignment.id);
+          }
+
+          // Initial visit handling & Cleared Fields handling (Skip unchanged updates)
+          const currentVisit = existingTicket.initialVisits[0];
+          if (initialVisitDateStr && engineerDbId) {
+            const visitDate = parseSafeDate(initialVisitDateStr) || complaintDate;
+            if (!currentVisit) {
+              initialVisitsToCreate.push({
+                id: randomUUID(),
+                ticketId,
+                engineerId: engineerDbId,
+                visitDate,
+                remarks: "Completed diagnostic check on pump."
+              });
+            } else {
+              const visitDateChanged = !currentVisit.visitDate || new Date(currentVisit.visitDate).getTime() !== visitDate.getTime();
+              const engChanged = currentVisit.engineerId !== engineerDbId;
+              if (visitDateChanged || engChanged) {
+                initialVisitsToUpdate.push({
+                  id: currentVisit.id,
+                  engineerId: engineerDbId,
+                  visitDate
+                });
+              }
+            }
+          } else if (currentVisit && !initialVisitDateStr) {
+            // Handle cleared initial visit field
+            initialVisitsToDelete.push(currentVisit.id);
+          }
+
+          // Service report handling & Cleared Fields handling (Skip unchanged updates)
+          const currentReport = existingTicket.serviceReports[0];
+          if (serviceReportDateStr) {
+            const reportDate = parseSafeDate(serviceReportDateStr) || complaintDate;
+            if (!currentReport) {
+              serviceReportsToCreate.push({
+                id: randomUUID(),
+                ticketId,
+                reportDate,
+                workDone: "Inspected wiring and restored system operation.",
+                status: "COMPLETED"
+              });
+            } else {
+              const reportDateChanged = !currentReport.reportDate || new Date(currentReport.reportDate).getTime() !== reportDate.getTime();
+              if (reportDateChanged) {
+                serviceReportsToUpdate.push({
+                  id: currentReport.id,
+                  reportDate
+                });
+              }
+            }
+          } else if (currentReport && !serviceReportDateStr) {
+            // Handle cleared service report field
+            serviceReportsToDelete.push(currentReport.id);
+          }
+
+          // Material request handling & Cleared Fields handling
+          const currentMR = existingTicket.materialRequests[0];
+          const hasMaterialRequest =
+            Boolean(materialStatusStr) &&
+            materialStatusStr.toUpperCase() !== "N/A" &&
+            Boolean(engineerDbId);
+
+          if (hasMaterialRequest && engineerDbId) {
+            const materialStatusClean =
+              materialStatusStr.toUpperCase() === "SUBMITTED"
+                ? "PENDING"
+                : materialStatusStr.toUpperCase();
+
+            if (!currentMR) {
+              const materialRequestId = randomUUID();
+
+              materialRequestsToCreate.push({
+                id: materialRequestId,
+                ticketId,
+                requestedBy: engineerDbId,
+                status: materialStatusClean,
+                remarks: "Required solar components."
+              });
+
+              materialRequestItemsToCreate.push({
+                id: randomUUID(),
+                materialRequestId,
+                itemName: "Solar Pump Controller Card",
+                quantity: 1
+              });
+            } else if (
+              currentMR.status !== materialStatusClean ||
+              currentMR.requestedBy !== engineerDbId
+            ) {
+              materialRequestsToUpdate.push({
+                id: currentMR.id,
+                status: materialStatusClean,
+                requestedBy: engineerDbId
+              });
+            }
+          } else if (currentMR) {
+            materialRequestsToDelete.push(currentMR.id);
+          }
+
+        } else {
+          // BRAND NEW TICKET
+          const complaintId = randomUUID();
+          const ticketId = randomUUID();
+
+          complaintsToCreate.push({
+            id: complaintId,
+            formResponseId: rowNumber.toString(),
+            applicationId: finalAppId,
+            complainantName: clientName.trim(),
+            complainantPhone: complainantPhone.trim(),
+            complaintType: complaintType.trim(),
+            description: description.trim(),
+            submissionTimestamp: complaintDate,
+            syncStatus: "SYNCED",
+            metadata: rowMetadata
+          });
+
+          ticketsToCreate.push({
+            id: ticketId,
+            ticketNumber: finalTicketNumber,
+            complaintId,
+            status: liveStage,
+            priority,
+            createdAt: complaintDate,
+            dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
+            metadata: rowMetadata
+          });
+
+          ticketHistoriesToCreate.push({
             id: randomUUID(),
             ticketId,
-            engineerId: engineerDbId,
-            assignedAt: complaintDate
+            newStatus: liveStage,
+            changeSummary: "Ticket created from Google Sheets sync."
           });
-        }
 
-        // Visits array
-        if (initialVisitDateStr && engineerDbId) {
-          initialVisits.push({
-            id: randomUUID(),
-            ticketId,
-            engineerId: engineerDbId,
-            visitDate: parseSafeDate(initialVisitDateStr) || complaintDate,
-            remarks: "Completed diagnostic check on pump."
-          });
-        }
+          if (engineerDbId) {
+            ticketAssignmentsToCreate.push({
+              id: randomUUID(),
+              ticketId,
+              engineerId: engineerDbId,
+              assignedAt: complaintDate
+            });
+          }
 
-        // Service Reports array
-        if (serviceReportDateStr) {
-          serviceReports.push({
-            id: randomUUID(),
-            ticketId,
-            reportDate: parseSafeDate(serviceReportDateStr) || complaintDate,
-            workDone: "Inspected wiring and restored system operation.",
-            status: "COMPLETED"
-          });
-        }
+          if (initialVisitDateStr && engineerDbId) {
+            initialVisitsToCreate.push({
+              id: randomUUID(),
+              ticketId,
+              engineerId: engineerDbId,
+              visitDate: parseSafeDate(initialVisitDateStr) || complaintDate,
+              remarks: "Completed diagnostic check on pump."
+            });
+          }
 
-        // Material Requests array
-        if (materialStatusStr && materialStatusStr !== "N/A" && engineerDbId) {
-          const materialRequestId = randomUUID();
-          const materialStatusClean = materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase();
-          materialRequests.push({
-            id: materialRequestId,
-            ticketId,
-            requestedBy: engineerDbId,
-            status: materialStatusClean,
-            remarks: "Required solar components."
-          });
-          materialRequestItems.push({
-            id: randomUUID(),
-            materialRequestId,
-            itemName: "Solar Pump Controller Card",
-            quantity: 1
-          });
-        }
+          if (serviceReportDateStr) {
+            serviceReportsToCreate.push({
+              id: randomUUID(),
+              ticketId,
+              reportDate: parseSafeDate(serviceReportDateStr) || complaintDate,
+              workDone: "Inspected wiring and restored system operation.",
+              status: "COMPLETED"
+            });
+          }
 
-        // History logs array
-        ticketHistories.push({
-          id: randomUUID(),
-          ticketId,
-          newStatus: liveStage,
-          changeSummary: "Ticket synced from Google Sheets."
-        });
+          if (materialStatusStr && materialStatusStr !== "N/A" && engineerDbId) {
+            const materialRequestId = randomUUID();
+            const materialStatusClean = materialStatusStr.toUpperCase() === "SUBMITTED" ? "PENDING" : materialStatusStr.toUpperCase();
+            materialRequestsToCreate.push({
+              id: materialRequestId,
+              ticketId,
+              requestedBy: engineerDbId,
+              status: materialStatusClean,
+              remarks: "Required solar components."
+            });
+            materialRequestItemsToCreate.push({
+              id: randomUUID(),
+              materialRequestId,
+              itemName: "Solar Pump Controller Card",
+              quantity: 1
+            });
+          }
+        }
       }
 
-      // 6. Execute all deletions and creations inside ONE atomic interactive transaction
+      // 6. Execute non-destructive atomic updates inside ONE interactive transaction
       await prisma.$transaction(async (tx) => {
         // Create new States
         if (newStates.size > 0) {
@@ -417,15 +655,7 @@ export const syncService = {
           });
         }
 
-        // Create new Users
-        if (newUsers.size > 0) {
-          await tx.user.createMany({
-            data: Array.from(newUsers.values()),
-            skipDuplicates: true
-          });
-        }
-
-        // Create new Engineers
+        // Create new Operational Engineers (only operational records, no User login accounts)
         if (newEngineers.size > 0) {
           await tx.engineer.createMany({
             data: Array.from(newEngineers.values()),
@@ -433,15 +663,13 @@ export const syncService = {
           });
         }
 
-        // Create new installations
+        // Master Installations
         if (installationsToCreate.length > 0) {
           await tx.masterInstallation.createMany({
             data: installationsToCreate,
             skipDuplicates: true
           });
         }
-
-        // Update modified installations
         for (const inst of installationsToUpdate) {
           await tx.masterInstallation.update({
             where: { id: inst.id },
@@ -455,34 +683,178 @@ export const syncService = {
           });
         }
 
-        // Clear transactional history (except permanent installations / user / engineer structures)
-        await tx.syncLog.deleteMany();
-        await tx.ticketHistory.deleteMany();
-        await tx.initialVisit.deleteMany();
-        await tx.serviceReport.deleteMany();
-        await tx.materialRequestItem.deleteMany();
-        await tx.materialRequest.deleteMany();
-        await tx.ticketAssignment.deleteMany();
-        await tx.ticket.deleteMany();
-        await tx.complaint.deleteMany();
+        // Complaints
+        if (complaintsToCreate.length > 0) {
+          await tx.complaint.createMany({ data: complaintsToCreate, skipDuplicates: true });
+        }
+        for (const c of complaintsToUpdate) {
+          await tx.complaint.update({
+            where: { id: c.id },
+            data: {
+              complainantName: c.complainantName,
+              complainantPhone: c.complainantPhone,
+              complaintType: c.complaintType,
+              description: c.description,
+              metadata: c.metadata
+            }
+          });
+        }
 
-        // Write fresh transaction data rows
-        await tx.complaint.createMany({ data: complaints, skipDuplicates: true });
-        await tx.ticket.createMany({ data: tickets, skipDuplicates: true });
-        await tx.ticketAssignment.createMany({ data: ticketAssignments, skipDuplicates: true });
-        await tx.initialVisit.createMany({ data: initialVisits, skipDuplicates: true });
-        await tx.serviceReport.createMany({ data: serviceReports, skipDuplicates: true });
-        await tx.materialRequest.createMany({ data: materialRequests, skipDuplicates: true });
-        await tx.materialRequestItem.createMany({ data: materialRequestItems, skipDuplicates: true });
-        await tx.ticketHistory.createMany({ data: ticketHistories, skipDuplicates: true });
+        // Tickets
+        if (ticketsToCreate.length > 0) {
+          await tx.ticket.createMany({ data: ticketsToCreate, skipDuplicates: true });
+        }
+        for (const t of ticketsToUpdate) {
+          await tx.ticket.update({
+            where: { id: t.id },
+            data: {
+              status: t.status,
+              priority: t.priority,
+              metadata: t.metadata
+            }
+          });
+        }
+
+        // Ticket Assignments (Create, Update & Delete cleared)
+        if (ticketAssignmentsToCreate.length > 0) {
+          await tx.ticketAssignment.createMany({ data: ticketAssignmentsToCreate, skipDuplicates: true });
+        }
+        for (const a of ticketAssignmentsToUpdate) {
+          await tx.ticketAssignment.update({
+            where: { id: a.id },
+            data: { engineerId: a.engineerId, assignedAt: a.assignedAt }
+          });
+        }
+        if (ticketAssignmentsToDelete.length > 0) {
+          await tx.ticketAssignment.deleteMany({ where: { id: { in: ticketAssignmentsToDelete } } });
+        }
+
+        // Initial Visits (Create, Update & Delete cleared)
+        if (initialVisitsToCreate.length > 0) {
+          await tx.initialVisit.createMany({ data: initialVisitsToCreate, skipDuplicates: true });
+        }
+        for (const v of initialVisitsToUpdate) {
+          await tx.initialVisit.update({
+            where: { id: v.id },
+            data: { engineerId: v.engineerId, visitDate: v.visitDate }
+          });
+        }
+        if (initialVisitsToDelete.length > 0) {
+          await tx.initialVisit.deleteMany({ where: { id: { in: initialVisitsToDelete } } });
+        }
+
+        // Service Reports (Create, Update & Delete cleared)
+        if (serviceReportsToCreate.length > 0) {
+          await tx.serviceReport.createMany({ data: serviceReportsToCreate, skipDuplicates: true });
+        }
+        for (const sr of serviceReportsToUpdate) {
+          await tx.serviceReport.update({
+            where: { id: sr.id },
+            data: { reportDate: sr.reportDate }
+          });
+        }
+        if (serviceReportsToDelete.length > 0) {
+          await tx.serviceReport.deleteMany({ where: { id: { in: serviceReportsToDelete } } });
+        }
+
+        // Material Requests & Items (Create, Update & Delete cleared)
+        if (materialRequestsToCreate.length > 0) {
+          await tx.materialRequest.createMany({ data: materialRequestsToCreate, skipDuplicates: true });
+        }
+        if (materialRequestItemsToCreate.length > 0) {
+          await tx.materialRequestItem.createMany({ data: materialRequestItemsToCreate, skipDuplicates: true });
+        }
+        for (const mr of materialRequestsToUpdate) {
+          await tx.materialRequest.update({
+            where: { id: mr.id },
+            data: {
+              status: mr.status,
+              requestedBy: mr.requestedBy
+            }
+          });
+        }
+        if (materialRequestsToDelete.length > 0) {
+          await tx.materialRequestItem.deleteMany({
+            where: {
+              materialRequestId: {
+                in: materialRequestsToDelete
+              }
+            }
+          });
+          await tx.materialRequest.deleteMany({
+            where: {
+              id: {
+                in: materialRequestsToDelete
+              }
+            }
+          });
+        }
+
+        // Ticket History
+        if (ticketHistoriesToCreate.length > 0) {
+          await tx.ticketHistory.createMany({ data: ticketHistoriesToCreate, skipDuplicates: true });
+        }
+
+        // 🛡️ Strict Deletion Safety Guard before deleting missing tickets
+        const ABSOLUTE_MINIMUM_ROWS = 600;
+        const percentageMinimum = Math.floor(existingTickets.length * 0.9);
+
+        const minimumSafeRows =
+          existingTickets.length === 0
+            ? 1
+            : Math.min(ABSOLUTE_MINIMUM_ROWS, percentageMinimum);
+
+        const isSafeToPrune =
+          processedTicketNumbers.size >= minimumSafeRows;
+
+        if (isSafeToPrune) {
+          const ticketsToDelete = existingTickets.filter(t => !processedTicketNumbers.has(t.ticketNumber.toUpperCase().trim()));
+          if (ticketsToDelete.length > 0) {
+            const deleteIds = ticketsToDelete.map(t => t.id);
+            const deleteComplaintIds = ticketsToDelete.map(t => t.complaintId);
+
+            await tx.ticketHistory.deleteMany({ where: { ticketId: { in: deleteIds } } });
+            await tx.initialVisit.deleteMany({ where: { ticketId: { in: deleteIds } } });
+            await tx.serviceReport.deleteMany({ where: { ticketId: { in: deleteIds } } });
+            await tx.materialRequestItem.deleteMany({ where: { materialRequest: { ticketId: { in: deleteIds } } } });
+            await tx.materialRequest.deleteMany({ where: { ticketId: { in: deleteIds } } });
+            await tx.ticketAssignment.deleteMany({ where: { ticketId: { in: deleteIds } } });
+            await tx.ticket.deleteMany({ where: { id: { in: deleteIds } } });
+            await tx.complaint.deleteMany({ where: { id: { in: deleteComplaintIds } } });
+          }
+        } else if (existingTickets.length > 0) {
+          console.warn(`⚠️ Safety Guard Triggered: Parsed row count (${processedTicketNumbers.size}) is lower than minimum safe threshold (${minimumSafeRows}). Skipped deleting missing tickets to preserve database integrity.`);
+        }
 
       }, {
-        timeout: 45000 // 45s timeout limit for large workbook loads
+        timeout: 60000 // Fast 60s timeout for incremental upsert
       });
 
       return {
         installationsCount: processedInstallations.size,
-        ticketsCount: tickets.length
+        ticketsCount: processedTicketNumbers.size,
+        created: {
+          tickets: ticketsToCreate.length,
+          complaints: complaintsToCreate.length,
+          assignments: ticketAssignmentsToCreate.length,
+          visits: initialVisitsToCreate.length,
+          reports: serviceReportsToCreate.length,
+          materialRequests: materialRequestsToCreate.length
+        },
+        updated: {
+          tickets: ticketsToUpdate.length,
+          complaints: complaintsToUpdate.length,
+          assignments: ticketAssignmentsToUpdate.length,
+          visits: initialVisitsToUpdate.length,
+          reports: serviceReportsToUpdate.length,
+          materialRequests: materialRequestsToUpdate.length
+        },
+        cleared: {
+          assignments: ticketAssignmentsToDelete.length,
+          visits: initialVisitsToDelete.length,
+          reports: serviceReportsToDelete.length,
+          materialRequests: materialRequestsToDelete.length
+        }
       };
 
     } finally {
