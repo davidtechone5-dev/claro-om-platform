@@ -52,7 +52,7 @@ export function Warehouse() {
               ) : (
                 requests.map((r) => (
                   <tr key={r.id}>
-                    <td style={{ fontWeight: "600", color: "#fff", fontFamily: "monospace" }}>
+                    <td style={{ fontWeight: "600", color: "var(--text-main)", fontFamily: "monospace" }}>
                       #{r.id.slice(0, 8)}
                     </td>
                     <td style={{ fontWeight: "500", color: "var(--text-muted)" }}>

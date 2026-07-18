@@ -136,7 +136,7 @@ export function Tickets() {
                       key={t.id} 
                       onClick={() => navigate(`/tickets/${t.id}`, { state: { ticket: t } })}
                     >
-                      <td style={{ fontWeight: "600", color: "#fff" }}>{t.ticketNumber}</td>
+                      <td style={{ fontWeight: "600", color: "var(--text-main)" }}>{t.ticketNumber}</td>
                       <td style={{ fontFamily: "monospace" }}>{t.complaint?.applicationId}</td>
                       <td>{t.complaint?.complainantName}</td>
                       <td>

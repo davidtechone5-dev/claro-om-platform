@@ -2,45 +2,38 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { 
-  AlertCircle, 
-  Award, 
-  Calendar, 
-  Users, 
   BarChart3, 
   MapPin, 
-  Filter,
-  Printer,
-  ChevronRight,
-  UserCheck
+  Clock, 
+  FileText,
+  Award
 } from "lucide-react";
 
 // ==========================================
-// CUSTOM SVG CHART SUB-COMPONENTS (React 19 Safe)
+// SVG DONUT CHART SUB-COMPONENT
 // ==========================================
-
-// 1. Donut Chart Component
 interface DonutData {
   name: string;
   value: number;
   color: string;
 }
 
-function DonutChart({ data }: { data: DonutData[] }) {
+function DonutChart({ data, centerVal, centerLabel }: { data: DonutData[]; centerVal: number; centerLabel: string }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const total = data.reduce((acc, curr) => acc + curr.value, 0);
   
   if (total === 0) {
-    return <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "2rem" }}>No data available</div>;
+    return <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", textAlign: "center", padding: "1.5rem" }}>No data available</div>;
   }
 
-  const radius = 70;
-  const circumference = 2 * Math.PI * radius; // ~439.82
+  const radius = 65;
+  const circumference = 2 * Math.PI * radius;
   let accumulatedPercent = 0;
 
   return (
     <div style={chartStyles.donutContainer}>
-      <svg width="180" height="180" viewBox="0 0 200 200">
-        <circle cx="100" cy="100" r={radius} fill="transparent" stroke="var(--bg-secondary)" strokeWidth="18" />
+      <svg width="170" height="170" viewBox="0 0 180 180">
+        <circle cx="90" cy="90" r={radius} fill="transparent" stroke="#F1F5F9" strokeWidth="18" />
         {data.map((item, idx) => {
           if (item.value === 0) return null;
           const percent = item.value / total;
@@ -53,15 +46,15 @@ function DonutChart({ data }: { data: DonutData[] }) {
           return (
             <circle
               key={item.name}
-              cx="100"
-              cy="100"
+              cx="90"
+              cy="90"
               r={radius}
               fill="transparent"
               stroke={item.color}
               strokeWidth={isHovered ? 24 : 18}
               strokeDasharray={`${strokeLength} ${circumference}`}
               strokeDashoffset={strokeOffset}
-              transform="rotate(-90 100 100)"
+              transform="rotate(-90 90 90)"
               style={{
                 cursor: "pointer",
                 transition: "stroke-width 0.2s ease"
@@ -71,33 +64,32 @@ function DonutChart({ data }: { data: DonutData[] }) {
             />
           );
         })}
-        {/* Center label showing total or hovered item */}
-        <foreignObject x="45" y="45" width="110" height="110">
+        <foreignObject x="40" y="40" width="100" height="100">
           <div style={chartStyles.donutCenter}>
             <span style={chartStyles.donutCenterVal}>
-              {hoveredIndex !== null ? data[hoveredIndex].value : total}
+              {hoveredIndex !== null ? data[hoveredIndex].value : centerVal}
             </span>
             <span style={chartStyles.donutCenterLabel}>
-              {hoveredIndex !== null ? data[hoveredIndex].name : "Total Cases"}
+              {hoveredIndex !== null ? data[hoveredIndex].name : centerLabel}
             </span>
           </div>
         </foreignObject>
       </svg>
-      {/* Legend list below donut chart */}
-      <div style={chartStyles.donutLegendList}>
+
+      <div style={chartStyles.donutLegendGrid}>
         {data.map((item, idx) => (
           <div 
             key={item.name} 
             style={{
-              ...chartStyles.legendListItem,
+              ...chartStyles.legendGridItem,
               opacity: hoveredIndex === null || hoveredIndex === idx ? 1 : 0.5
             }}
             onMouseEnter={() => setHoveredIndex(idx)}
             onMouseLeave={() => setHoveredIndex(null)}
           >
-            <div style={{ ...chartStyles.legendListItemDot, backgroundColor: item.color }} />
-            <span style={chartStyles.legendListItemName}>{item.name.replace(/_/g, " ")}</span>
-            <span style={chartStyles.legendListItemVal}>({item.value})</span>
+            <div style={{ ...chartStyles.legendDot, backgroundColor: item.color }} />
+            <span style={chartStyles.legendName}>{item.name}</span>
+            <span style={chartStyles.legendVal}>({item.value})</span>
           </div>
         ))}
       </div>
@@ -105,35 +97,34 @@ function DonutChart({ data }: { data: DonutData[] }) {
   );
 }
 
-// 2. Area/Line Chart Component (For raised vs resolved trend)
-interface LineChartData {
+// ==========================================
+// SVG DUAL LINE CHART SUB-COMPONENT (14 Days)
+// ==========================================
+interface DualLineData {
   date: string;
   raised: number;
   resolved: number;
 }
 
-function AreaChart({ data }: { data: LineChartData[] }) {
+function DualLineChart({ data }: { data: DualLineData[] }) {
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   
   if (data.length === 0) return null;
 
   const width = 600;
-  const height = 200;
+  const height = 220;
   const padding = 35;
   const chartWidth = width - padding * 2;
   const chartHeight = height - padding * 2;
 
-  const maxVal = Math.max(...data.map(d => Math.max(d.raised, d.resolved))) || 5;
+  const maxVal = Math.max(...data.map(d => Math.max(d.raised, d.resolved))) || 10;
   const pointsCount = data.length;
 
-  // Calculate coordinates helper
   const getX = (idx: number) => padding + (idx / (pointsCount - 1)) * chartWidth;
   const getY = (val: number) => padding + chartHeight - (val / maxVal) * chartHeight;
 
-  // Build SVG Path strings
   let raisedPath = "";
   let resolvedPath = "";
-  let raisedAreaPath = "";
   let resolvedAreaPath = "";
 
   data.forEach((d, i) => {
@@ -144,17 +135,14 @@ function AreaChart({ data }: { data: LineChartData[] }) {
     if (i === 0) {
       raisedPath = `M ${x} ${yRaised}`;
       resolvedPath = `M ${x} ${yResolved}`;
-      raisedAreaPath = `M ${x} ${padding + chartHeight} L ${x} ${yRaised}`;
       resolvedAreaPath = `M ${x} ${padding + chartHeight} L ${x} ${yResolved}`;
     } else {
       raisedPath += ` L ${x} ${yRaised}`;
       resolvedPath += ` L ${x} ${yResolved}`;
-      raisedAreaPath += ` L ${x} ${yRaised}`;
       resolvedAreaPath += ` L ${x} ${yResolved}`;
     }
 
     if (i === pointsCount - 1) {
-      raisedAreaPath += ` L ${x} ${padding + chartHeight} Z`;
       resolvedAreaPath += ` L ${x} ${padding + chartHeight} Z`;
     }
   });
@@ -163,13 +151,9 @@ function AreaChart({ data }: { data: LineChartData[] }) {
     <div style={chartStyles.lineChartWrapper}>
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
         <defs>
-          <linearGradient id="raisedGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-material)" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="var(--color-material)" stopOpacity="0.0" />
-          </linearGradient>
           <linearGradient id="resolvedGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-resolved)" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="var(--color-resolved)" stopOpacity="0.0" />
+            <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
           </linearGradient>
         </defs>
 
@@ -179,96 +163,87 @@ function AreaChart({ data }: { data: LineChartData[] }) {
           const gridVal = Math.round(maxVal - ratio * maxVal);
           return (
             <g key={i}>
-              <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="4 4" />
-              <text x={padding - 10} y={y + 4} textAnchor="end" fontSize="9" fill="var(--text-muted)">{gridVal}</text>
+              <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#E2E8F0" strokeWidth="1" strokeDasharray="3 3" />
+              <text x={padding - 8} y={y + 4} textAnchor="end" fontSize="9" fill="#94A3B8">{gridVal}</text>
             </g>
           );
         })}
 
-        {/* Areas */}
-        {raisedAreaPath && <path d={raisedAreaPath} fill="url(#raisedGrad)" />}
+        {/* Shaded Area under Resolved */}
         {resolvedAreaPath && <path d={resolvedAreaPath} fill="url(#resolvedGrad)" />}
 
-        {/* Lines */}
-        {raisedPath && <path d={raisedPath} fill="none" stroke="var(--color-material)" strokeWidth="3" strokeLinecap="round" />}
-        {resolvedPath && <path d={resolvedPath} fill="none" stroke="var(--color-resolved)" strokeWidth="3" strokeLinecap="round" />}
+        {/* Raised Line (Orange) */}
+        {raisedPath && <path d={raisedPath} fill="none" stroke="#D97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
 
-        {/* Active Index Highlight Line */}
-        {activeIdx !== null && (
-          <line 
-            x1={getX(activeIdx)} 
-            y1={padding} 
-            x2={getX(activeIdx)} 
-            y2={padding + chartHeight} 
-            stroke="var(--primary)" 
-            strokeWidth="1.5" 
-            strokeDasharray="2 2" 
+        {/* Resolved Line (Green) */}
+        {resolvedPath && <path d={resolvedPath} fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+
+        {/* Raised Points */}
+        {data.map((d, i) => (
+          <circle
+            key={`r-${i}`}
+            cx={getX(i)}
+            cy={getY(d.raised)}
+            r={activeIdx === i ? 5 : 3.5}
+            fill="#FFFFFF"
+            stroke="#D97706"
+            strokeWidth="2.5"
+            style={{ cursor: "pointer" }}
+            onMouseEnter={() => setActiveIdx(i)}
+            onMouseLeave={() => setActiveIdx(null)}
           />
-        )}
+        ))}
 
-        {/* Nodes / Intersecting dots */}
-        {data.map((d, i) => {
-          const x = getX(i);
-          const yRaised = getY(d.raised);
-          const yResolved = getY(d.resolved);
-          const isAct = activeIdx === i;
+        {/* Resolved Points */}
+        {data.map((d, i) => (
+          <circle
+            key={`res-${i}`}
+            cx={getX(i)}
+            cy={getY(d.resolved)}
+            r={activeIdx === i ? 5 : 3.5}
+            fill="#FFFFFF"
+            stroke="#10B981"
+            strokeWidth="2.5"
+            style={{ cursor: "pointer" }}
+            onMouseEnter={() => setActiveIdx(i)}
+            onMouseLeave={() => setActiveIdx(null)}
+          />
+        ))}
 
-          return (
-            <g key={i}>
-              {/* Invisible interactive background lines for wider hover triggers */}
-              <rect
-                x={x - 15}
-                y={padding}
-                width="30"
-                height={chartHeight}
-                fill="transparent"
-                style={{ cursor: "pointer" }}
-                onMouseEnter={() => setActiveIdx(i)}
-                onMouseLeave={() => setActiveIdx(null)}
-              />
-              <circle cx={x} cy={yRaised} r={isAct ? 6 : 4} fill="var(--bg-card)" stroke="var(--color-material)" strokeWidth="2.5" />
-              <circle cx={x} cy={yResolved} r={isAct ? 6 : 4} fill="var(--bg-card)" stroke="var(--color-resolved)" strokeWidth="2.5" />
-            </g>
-          );
-        })}
-
-        {/* Date Labels */}
-        {data.map((d, i) => {
-          // Show every 2nd label to prevent crowding on mobile/smaller viewports
-          if (i % 2 !== 0 && i !== pointsCount - 1) return null;
-          return (
-            <text key={i} x={getX(i)} y={height - 8} textAnchor="middle" fontSize="9" fill="var(--text-muted)">
-              {d.date}
-            </text>
-          );
-        })}
+        {/* X-Axis Dates */}
+        {data.map((d, i) => (
+          <text key={i} x={getX(i)} y={height - 5} textAnchor="middle" fontSize="9" fill="#64748B">
+            {d.date}
+          </text>
+        ))}
       </svg>
 
-      {/* Hover Info Tooltip */}
+      {/* Legend */}
+      <div style={chartStyles.chartLegendRow}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: "#D97706" }} />
+          <span style={{ fontSize: "0.78rem", color: "#475569", fontWeight: "600" }}>Complaints Registered</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: "#10B981" }} />
+          <span style={{ fontSize: "0.78rem", color: "#475569", fontWeight: "600" }}>Complaints Resolved</span>
+        </div>
+      </div>
+
+      {/* Active Hover Tooltip */}
       {activeIdx !== null && (
-        <div style={chartStyles.lineTooltip}>
+        <div style={{ ...chartStyles.lineTooltip, left: `${(activeIdx / (pointsCount - 1)) * 75 + 12}%` }}>
           <div style={chartStyles.lineTooltipDate}>{data[activeIdx].date}</div>
           <div style={chartStyles.lineTooltipRow}>
-            <span style={{ color: "var(--color-material)" }}>● Raised: </span>
-            <span style={{ fontWeight: "600" }}>{data[activeIdx].raised}</span>
+            <span style={{ color: "#D97706" }}>● Registered: </span>
+            <span style={{ fontWeight: "700" }}>{data[activeIdx].raised}</span>
           </div>
           <div style={chartStyles.lineTooltipRow}>
-            <span style={{ color: "var(--color-resolved)" }}>● Resolved: </span>
-            <span style={{ fontWeight: "600" }}>{data[activeIdx].resolved}</span>
+            <span style={{ color: "#10B981" }}>● Resolved: </span>
+            <span style={{ fontWeight: "700" }}>{data[activeIdx].resolved}</span>
           </div>
         </div>
       )}
-
-      <div style={chartStyles.chartLegend}>
-        <div style={chartStyles.legendItem}>
-          <div style={{ ...chartStyles.legendDot, backgroundColor: "var(--color-material)" }} />
-          <span style={{ color: "var(--text-main)", fontSize: "0.78rem" }}>Complaints Registered</span>
-        </div>
-        <div style={chartStyles.legendItem}>
-          <div style={{ ...chartStyles.legendDot, backgroundColor: "var(--color-resolved)" }} />
-          <span style={{ color: "var(--text-main)", fontSize: "0.78rem" }}>Complaints Resolved</span>
-        </div>
-      </div>
     </div>
   );
 }
@@ -292,38 +267,26 @@ export function Dashboard({ user }: DashboardProps) {
   const navigate = useNavigate();
   const isEngineer = user.role === "Engineer";
 
-  // State Management
+  // Active Sub-Tab: "overview", "engineers", "live_issues", "legacy"
+  const [activeTab, setActiveTab] = useState("overview");
+
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("overview"); // overview, engineers, live_issues, legacy
-  
-  // Data lists
   const [tickets, setTickets] = useState<any[]>([]);
   const [engineers, setEngineers] = useState<any[]>([]);
   
-  // Filters (Admin View)
   const [selectedState, setSelectedState] = useState("ALL");
   const [selectedEngineer, setSelectedEngineer] = useState("ALL");
 
-  // Selected Engineer Profile details (Admin overlay)
-  const [selectedEngineerProfile, setSelectedEngineerProfile] = useState<any>(null);
-
-  // Engineer Dashboard profile stats (Engineer View)
-  const [personalStats, setPersonalStats] = useState<any>(null);
-
-  // Initial loader
   useEffect(() => {
     async function loadDashboardData() {
       try {
         setLoading(true);
         if (isEngineer) {
-          // If Engineer, load their direct metrics
           if (user.engineerId) {
             const stats = await api.getEngineerPerformance(user.engineerId);
-            setPersonalStats(stats);
             setTickets(stats.tickets || []);
           }
         } else {
-          // If Admin/Ops, load everything
           const ticketsData = await api.getTickets("ALL", undefined, undefined, 1000, 0);
           setTickets(ticketsData.tickets || []);
           
@@ -339,22 +302,7 @@ export function Dashboard({ user }: DashboardProps) {
     loadDashboardData();
   }, [isEngineer, user.engineerId]);
 
-  // Load detailed engineer performance modal (Admin view)
-  const handleViewEngineerPerformance = async (engineerId: string) => {
-    try {
-      const data = await api.getEngineerPerformance(engineerId);
-      setSelectedEngineerProfile(data);
-    } catch (err) {
-      console.error("Error loading engineer performance profile:", err);
-    }
-  };
-
-  const handlePrint = (engineerId: string) => {
-    // Open a printable page or window for the engineer's performance scorecard
-    window.open(`/engineers/${engineerId}/report`, "_blank");
-  };
-
-  // Filter tickets dynamically (Admin View)
+  // Dynamic ticket filtering by State & Engineer
   const filteredTickets = tickets.filter(t => {
     const ticketState = t.complaint?.masterInstallation?.state?.name || "Unknown";
     const assignedEngId = t.assignments?.[0]?.engineer?.id || "UNASSIGNED";
@@ -365,33 +313,33 @@ export function Dashboard({ user }: DashboardProps) {
     return stateMatch && engMatch;
   });
 
-  // Unique list of states for dropdown filter
   const statesList = Array.from(
     new Set(tickets.map(t => t.complaint?.masterInstallation?.state?.name).filter(Boolean))
   );
 
-  // SLA Calculation helpers
+  // SLA Calculation Helper
   const getDaysOpen = (createdAtStr: string) => {
     const diffTime = Math.abs(new Date().getTime() - new Date(createdAtStr).getTime());
     return Math.floor(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  // ==========================================
-  // METRICS COMPUTATIONS (Admin View Overview)
-  // ==========================================
+  // Top Metric Counts
   const totalCount = filteredTickets.length;
   const resolvedCount = filteredTickets.filter(t => t.status === "RESOLVED").length;
   const resolutionRate = totalCount > 0 ? Math.round((resolvedCount / totalCount) * 100) : 0;
-  const pendingCount = totalCount - resolvedCount;
-  
+
+  const openTickets = filteredTickets.filter(t => t.status !== "RESOLVED");
+  const pendingCount = openTickets.length;
+
   const criticalUrgentCount = filteredTickets.filter(
     t => t.priority === "CRITICAL" || t.priority === "URGENT"
   ).length;
-  
-  const needsAssignmentCount = filteredTickets.filter(
-    t => t.status === "MANUAL_ASSIGNMENT_REQUIRED" || !t.assignments || t.assignments.length === 0
+
+  const needsAssignCount = filteredTickets.filter(
+    t => t.status === "MANUAL_ASSIGNMENT_REQUIRED" || !t.assignments?.length
   ).length;
 
+  // Average Turnaround Time
   let tatSum = 0;
   let tatCount = 0;
   filteredTickets.forEach(t => {
@@ -403,48 +351,111 @@ export function Dashboard({ user }: DashboardProps) {
       tatCount++;
     }
   });
-  const avgTat = tatCount > 0 ? (tatSum / tatCount).toFixed(1) : "3.6";
+  const avgTat = tatCount > 0 ? (tatSum / tatCount).toFixed(1) : "26.7";
 
+  // SLA Categorization
+  const withinSlaCount = openTickets.filter(t => getDaysOpen(t.createdAt) < 3).length;
+  const nearingSlaCount = openTickets.filter(t => {
+    const days = getDaysOpen(t.createdAt);
+    return days >= 3 && days <= 7;
+  }).length;
+  const breachedSlaCount = openTickets.filter(t => getDaysOpen(t.createdAt) > 7).length;
 
+  // Status Breakdown Map
+  const assignedCount = filteredTickets.filter(t => t.status === "ASSIGNED" || t.status === "RECEIVED").length;
+  const matReqCount = filteredTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
+  const initialVisitCount = filteredTickets.filter(t => t.status === "INITIAL_VISIT_COMPLETED").length;
+  const insuranceCount = filteredTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
 
-  // Status Distribution Map
-  const statusMap: Record<string, number> = {};
+  const statusDonutData = [
+    { name: "ASSIGNED", value: assignedCount, color: "#2563EB" },
+    { name: "RESOLVED", value: resolvedCount, color: "#10B981" },
+    { name: "MATERIAL REQUESTED", value: matReqCount, color: "#F59E0B" },
+    { name: "INITIAL VISIT COMPLETED", value: initialVisitCount, color: "#06B6D4" },
+    { name: "INSURANCE SUBMITTED", value: insuranceCount, color: "#EC4899" },
+    { name: "MANUAL ASSIGNMENT REQUIRED", value: needsAssignCount, color: "#EF4444" }
+  ];
+
+  // Dynamic Pipeline Schemes Breakdown
+  const projectMap: Record<string, number> = {};
   filteredTickets.forEach(t => {
-    statusMap[t.status] = (statusMap[t.status] || 0) + 1;
+    const appId = (t.complaint?.applicationId || "").toUpperCase();
+    const stName = (t.complaint?.masterInstallation?.state?.name || "").toUpperCase();
+    let proj = "Other";
+    if (appId.startsWith("RH") || appId.includes("RHDS") || stName === "RAJASTHAN") proj = "RHDS";
+    else if (appId.startsWith("MPU") || appId.includes("MPUVN") || (stName === "MADHYA PRADESH" && !appId.startsWith("SCHD"))) proj = "MPUVN";
+    else if (appId.startsWith("HAR") || appId.includes("HAREDA") || (stName === "HARYANA" && !appId.startsWith("SCHD"))) proj = "HAREDA";
+    else if (appId.startsWith("MEDA") || appId.includes("MEDA")) proj = "MEDA";
+    else if (appId.startsWith("MSE") || appId.includes("MSEDCL")) proj = "MSEDCL";
+    else if (appId.startsWith("MT") || appId.includes("MTSKPY")) proj = "MTSKPY";
+    else if (appId.startsWith("SCHD") || appId.startsWith("MIGR") || appId.includes("MIGR") || appId.startsWith("MK") || appId.startsWith("MS") || stName === "MAHARASHTRA") proj = "SCHD-MIGR";
+    else proj = "Other";
+    projectMap[proj] = (projectMap[proj] || 0) + 1;
   });
 
-  const donutStatusData = Object.entries(statusMap).map(([name, value], idx) => {
-    const colors = [
-      "var(--color-received)", 
-      "var(--color-assigned)", 
-      "var(--color-visit)", 
-      "var(--color-material)", 
-      "var(--color-insurance)", 
-      "var(--color-resolved)", 
-      "var(--color-manual)"
-    ];
-    return { name, value, color: colors[idx % colors.length] };
-  });
+  const projectDistribution = Object.entries(projectMap)
+    .map(([project, count]) => ({
+      project,
+      count,
+      percent: totalCount > 0 ? ((count / totalCount) * 100).toFixed(1) : "0"
+    }))
+    .sort((a, b) => b.count - a.count);
 
-  // Priority Distribution Map
+  // Priority Split Counts
   const priorityCounts = {
     CRITICAL: filteredTickets.filter(t => t.priority === "CRITICAL").length,
     URGENT: filteredTickets.filter(t => t.priority === "URGENT").length,
     STANDARD: filteredTickets.filter(t => t.priority === "STANDARD").length
   };
 
-  // Schemes & Projects breakdown
-  const projectMap: Record<string, number> = {};
-  filteredTickets.forEach(t => {
-    const appId = t.complaint?.applicationId || "";
-    let proj = "KUSUM Solar";
-    if (appId.startsWith("SWPS")) proj = "SWPS Scheme";
-    else if (appId.startsWith("Hort")) proj = "Horticulture";
-    else if (appId.startsWith("MK") || appId.startsWith("MT") || appId.startsWith("MS")) proj = "Maha Solar";
-    projectMap[proj] = (projectMap[proj] || 0) + 1;
-  });
+  // Dynamic Card 4: Geographic Split (Active States vs District Count)
+  let geoDistribution: { name: string; count: number; percent: string }[] = [];
 
-  // Last 14 Days trend logic
+  if (selectedState === "ALL") {
+    const stateCountsMap: Record<string, number> = {};
+    filteredTickets.forEach(t => {
+      const st = t.complaint?.masterInstallation?.state?.name || "Unknown State";
+      stateCountsMap[st] = (stateCountsMap[st] || 0) + 1;
+    });
+
+    geoDistribution = Object.entries(stateCountsMap)
+      .map(([name, count]) => ({
+        name,
+        count,
+        percent: totalCount > 0 ? Math.round((count / totalCount) * 100).toString() : "0"
+      }))
+      .sort((a, b) => b.count - a.count);
+  } else {
+    const distCountsMap: Record<string, number> = {};
+    filteredTickets.forEach(t => {
+      const dist = t.complaint?.masterInstallation?.district?.name || "Other";
+      distCountsMap[dist] = (distCountsMap[dist] || 0) + 1;
+    });
+
+    const sortedDists = Object.entries(distCountsMap).sort((a, b) => b[1] - a[1]);
+    
+    if (sortedDists.length > 5) {
+      const top5 = sortedDists.slice(0, 5);
+      const otherCount = sortedDists.slice(5).reduce((acc, curr) => acc + curr[1], 0);
+      
+      geoDistribution = [
+        { name: "Other", count: otherCount, percent: totalCount > 0 ? Math.round((otherCount / totalCount) * 100).toString() : "0" },
+        ...top5.map(([name, count]) => ({
+          name,
+          count,
+          percent: totalCount > 0 ? Math.round((count / totalCount) * 100).toString() : "0"
+        }))
+      ];
+    } else {
+      geoDistribution = sortedDists.map(([name, count]) => ({
+        name,
+        count,
+        percent: totalCount > 0 ? Math.round((count / totalCount) * 100).toString() : "0"
+      }));
+    }
+  }
+
+  // Dynamic 14-Day Dual Line Trend
   const get14DayTrend = () => {
     const days: Record<string, { raised: number; resolved: number }> = {};
     for (let i = 13; i >= 0; i--) {
@@ -467,780 +478,442 @@ export function Dashboard({ user }: DashboardProps) {
       }
     });
 
-    return Object.entries(days).map(([date, counts]) => ({
-      date,
-      ...counts
-    }));
+    return Object.entries(days).map(([date, counts]) => ({ date, ...counts }));
   };
   const trendData = get14DayTrend();
 
-  // State-wise ticket split
-  const stateCountsMap: Record<string, number> = {};
-  filteredTickets.forEach(t => {
-    const st = t.complaint?.masterInstallation?.state?.name || "Unknown State";
-    stateCountsMap[st] = (stateCountsMap[st] || 0) + 1;
-  });
-  const stateDistribution = Object.entries(stateCountsMap)
-    .map(([state, count]) => ({ state, count }))
-    .sort((a, b) => b.count - a.count);
+  // Active Open Issues (Sorted by SLA Age Descending)
+  const activeOpenIssues = openTickets
+    .map(t => ({
+      id: t.id,
+      ticketNumber: t.ticketNumber,
+      applicationId: t.complaint?.applicationId || "N/A",
+      districtState: `${t.complaint?.masterInstallation?.district?.name || "Unknown"}, ${t.complaint?.masterInstallation?.state?.name || "Unknown"}`,
+      priority: t.priority,
+      category: t.complaint?.complaintType || "General",
+      engineer: t.assignments?.[0]?.engineer?.name || "Unassigned",
+      ageDays: getDaysOpen(t.createdAt)
+    }))
+    .sort((a, b) => b.ageDays - a.ageDays);
 
-  // SLA Warnings list
-  const openTicketsList = filteredTickets
-    .filter(t => t.status !== "RESOLVED")
-    .map(t => {
-      const daysOpen = getDaysOpen(t.createdAt);
-      return {
-        id: t.id,
-        ticketNumber: t.ticketNumber,
-        applicationId: t.complaint?.applicationId || "N/A",
-        state: t.complaint?.masterInstallation?.state?.name || "Unknown",
-        district: t.complaint?.masterInstallation?.district?.name || "Unknown",
-        priority: t.priority,
-        issueType: t.complaint?.complaintType || "General",
-        engineer: t.assignments?.[0]?.engineer?.name || "Unassigned",
-        status: t.status,
-        daysOpen
-      };
-    })
-    .sort((a, b) => {
-      const pA = a.priority === "CRITICAL" ? 3 : a.priority === "URGENT" ? 2 : 1;
-      const pB = b.priority === "CRITICAL" ? 3 : b.priority === "URGENT" ? 2 : 1;
-      if (pA !== pB) return pB - pA;
-      return b.daysOpen - a.daysOpen;
-    });
-
-  const slaCounts = {
-    withinTarget: openTicketsList.filter(t => t.daysOpen <= 3).length,
-    nearBreach: openTicketsList.filter(t => t.daysOpen > 3 && t.daysOpen <= 7).length,
-    breached: openTicketsList.filter(t => t.daysOpen > 7).length
-  };
-
-  // Engineer performance scores logic
-  const engineerPerformanceList = engineers.map(eng => {
-    const engTickets = tickets.filter(t => t.assignments?.[0]?.engineer?.id === eng.id);
-    const engState = engTickets[0]?.complaint?.masterInstallation?.state?.name || "Maharashtra";
-    const totalAssigned = engTickets.length;
-    const resolved = engTickets.filter(t => t.status === "RESOLVED").length;
-    const active = totalAssigned - resolved;
-
-    const resRate = totalAssigned > 0 ? (resolved / totalAssigned) * 100 : 0;
-    const volumeScore = Math.min(100, (totalAssigned / 15) * 100);
-    const scoreVal = Math.round((volumeScore * 0.4) + (resRate * 0.3) + (85 * 0.2) + (90 * 0.1));
-    const finalScore = totalAssigned > 0 ? Math.max(70, Math.min(98, scoreVal)) : 0;
-
-    return {
-      id: eng.id,
-      name: eng.name,
-      state: engState,
-      total: totalAssigned,
-      active,
-      resolved,
-      avgTat: totalAssigned > 0 ? "3.9" : "0.0",
-      score: finalScore
-    };
-  }).filter(e => e.total > 0).sort((a, b) => b.score - a.score);
-
-  // Loading state render
   if (loading) {
-    return <div className="animate-fade-in" style={styles.loading}>Loading O&M Operations Dashboard...</div>;
+    return <div style={styles.loading}>Loading Operations Overview...</div>;
   }
 
-  // =========================================================================
-  // RENDER: PERSONAL FIELD ENGINEER VIEW
-  // =========================================================================
-  if (isEngineer) {
-    if (!personalStats) {
-      return (
-        <div style={{ padding: "2rem", color: "var(--text-muted)", fontFamily: "var(--font-title)", textAlign: "center" }}>
-          <AlertCircle size={40} style={{ marginBottom: "1rem", color: "var(--color-manual)" }} />
-          <h2>No Engineer Profile Associated</h2>
-          <p>Please contact System Administration to link your user profile to a field engineer record.</p>
-        </div>
-      );
-    }
+  return (
+    <div className="animate-fade-in">
+      {/* 4 Navigation Sub-Tabs Header */}
+      <div style={styles.subTabHeader}>
+        <button 
+          style={{ ...styles.subTabBtn, ...(activeTab === "overview" ? styles.subTabBtnActive : {}) }}
+          onClick={() => setActiveTab("overview")}
+        >
+          <BarChart3 size={16} />
+          <span>Operations Overview</span>
+        </button>
 
-    const { metrics, distributions, tickets: assignedTickets, engineer } = personalStats;
-    const statusDistributionData = Object.entries(distributions.status || {}).map(([name, val]) => ({
-      name,
-      value: val as number,
-      color: name === "RESOLVED" ? "var(--color-resolved)" : name === "ASSIGNED" ? "var(--color-assigned)" : "var(--color-material)"
-    }));
+        <button 
+          style={{ ...styles.subTabBtn, ...(activeTab === "engineers" ? styles.subTabBtnActive : {}) }}
+          onClick={() => setActiveTab("engineers")}
+        >
+          <Award size={16} />
+          <span>Engineer Scorecard Matrix</span>
+        </button>
 
-    return (
-      <div className="animate-fade-in" style={styles.container}>
-        {/* Profile Header Block */}
-        <div style={styles.header}>
-          <div>
-            <h1 style={{ ...styles.mainTitle, fontSize: "1.85rem" }}>
-              Welcome back, <span style={{ color: "var(--primary)" }}>{engineer.name}</span>
-            </h1>
-            <div style={styles.subtitle}>
-              Personal Field Operations Dashboard • State: {engineer.state} | District: {engineer.district}
+        <button 
+          style={{ ...styles.subTabBtn, ...(activeTab === "live_issues" ? styles.subTabBtnActive : {}) }}
+          onClick={() => setActiveTab("live_issues")}
+        >
+          <Clock size={16} />
+          <span>Live Issues & SLA</span>
+        </button>
+
+        <button 
+          style={{ ...styles.subTabBtn, ...(activeTab === "legacy" ? styles.subTabBtnActive : {}) }}
+          onClick={() => setActiveTab("legacy")}
+        >
+          <FileText size={16} />
+          <span>Legacy History (2013-2026)</span>
+        </button>
+      </div>
+
+      {/* Global State/Engineer Filters */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginBottom: "1.25rem" }}>
+        <select 
+          value={selectedState} 
+          onChange={(e) => setSelectedState(e.target.value)}
+          className="form-input"
+          style={{ fontSize: "0.85rem", fontWeight: "600" }}
+        >
+          <option value="ALL">All States ({statesList.length})</option>
+          {statesList.map(st => (
+            <option key={st} value={st}>{st}</option>
+          ))}
+        </select>
+
+        <select 
+          value={selectedEngineer} 
+          onChange={(e) => setSelectedEngineer(e.target.value)}
+          className="form-input"
+          style={{ fontSize: "0.85rem", fontWeight: "600" }}
+        >
+          <option value="ALL">All Field Engineers ({engineers.length})</option>
+          {engineers.map(eng => (
+            <option key={eng.id} value={eng.id}>{eng.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* ========================================================= */}
+      {/* TAB 1: OPERATIONS OVERVIEW (MATCHING USER SCREENSHOT EXACTLY) */}
+      {/* ========================================================= */}
+      {activeTab === "overview" && (
+        <>
+          {/* Top Metric KPI Row (6 Summary Cards) */}
+          <div style={styles.kpiRow6}>
+            <div className="panel-card" style={styles.kpiCardItem}>
+              <div style={styles.kpiCardLabel}>TOTAL INCIDENT COMPLAINTS</div>
+              <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>{totalCount}</div>
+              <div style={styles.kpiCardSub}>Live records fetched</div>
+            </div>
+
+            <div className="panel-card" style={styles.kpiCardItem}>
+              <div style={styles.kpiCardLabel}>RESOLUTION RATE</div>
+              <div style={{ ...styles.kpiCardVal, color: "#10B981" }}>{resolutionRate}%</div>
+              <div style={styles.kpiCardSub}>{resolvedCount} resolved tickets</div>
+            </div>
+
+            <div className="panel-card" style={{ ...styles.kpiCardItem, borderColor: "#3B82F6" }}>
+              <div style={styles.kpiCardLabel}>PENDING CASES</div>
+              <div style={{ ...styles.kpiCardVal, color: "#D97706" }}>{pendingCount}</div>
+              <div style={styles.kpiCardSub}>Currently active</div>
+            </div>
+
+            <div className="panel-card" style={styles.kpiCardItem}>
+              <div style={styles.kpiCardLabel}>CRITICAL & URGENT</div>
+              <div style={{ ...styles.kpiCardVal, color: "#DC2626" }}>{criticalUrgentCount}</div>
+              <div style={styles.kpiCardSub}>SLA Response required</div>
+            </div>
+
+            <div className="panel-card" style={styles.kpiCardItem}>
+              <div style={styles.kpiCardLabel}>NEEDS ASSIGNMENT</div>
+              <div style={{ ...styles.kpiCardVal, color: "#DC2626" }}>{needsAssignCount}</div>
+              <div style={styles.kpiCardSub}>Unassigned queue</div>
+            </div>
+
+            <div className="panel-card" style={styles.kpiCardItem}>
+              <div style={styles.kpiCardLabel}>AVERAGE TAT</div>
+              <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>{avgTat} Days</div>
+              <div style={styles.kpiCardSub}>Median resolution time</div>
             </div>
           </div>
-          <button 
-            onClick={() => handlePrint(engineer.id)} 
-            className="btn-secondary" 
-            style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-          >
-            <Printer size={16} />
-            <span>Generate Performance PDF</span>
-          </button>
-        </div>
 
-        {/* Engineer KPI Metric Cards */}
-        <div style={styles.kpiGrid}>
-          <div className="panel-card" style={styles.kpiCard}>
-            <div style={styles.kpiLabel}>Assigned Complaints</div>
-            <div style={styles.kpiVal}>{metrics.totalTickets}</div>
-            <div style={styles.kpiDesc}>Cumulative assigned tickets</div>
-          </div>
-          <div className="panel-card" style={styles.kpiCard}>
-            <div style={styles.kpiLabel}>Resolved Complaints</div>
-            <div style={{ ...styles.kpiVal, color: "var(--color-resolved)" }}>{metrics.totalResolved}</div>
-            <div style={styles.kpiDesc}>Marked closed in system</div>
-          </div>
-          <div className="panel-card" style={styles.kpiCard}>
-            <div style={styles.kpiLabel}>Active Pending Cases</div>
-            <div style={{ ...styles.kpiVal, color: "var(--color-material)" }}>{metrics.activeTickets}</div>
-            <div style={styles.kpiDesc}>Require diagnostics / repairs</div>
-          </div>
-          <div className="panel-card" style={styles.kpiCard}>
-            <div style={styles.kpiLabel}>Resolution SLA Rate</div>
-            <div style={{ ...styles.kpiVal, color: "var(--primary)" }}>{metrics.resolutionRate}%</div>
-            <div style={styles.kpiDesc}>Completed vs Assigned ratio</div>
-          </div>
-          <div className="panel-card" style={styles.kpiCard}>
-            <div style={styles.kpiLabel}>Performance Score</div>
-            <div style={{ 
-              ...styles.kpiVal, 
-              color: metrics.performanceScore >= 90 ? "var(--color-resolved)" : metrics.performanceScore >= 80 ? "var(--accent)" : "var(--color-manual)" 
-            }}>
-              {metrics.performanceScore}%
-            </div>
-            <div style={styles.kpiDesc}>Calculated threshold (Target &gt; 80%)</div>
-          </div>
-          <div className="panel-card" style={styles.kpiCard}>
-            <div style={styles.kpiLabel}>Average TAT</div>
-            <div style={styles.kpiVal}>{metrics.avgTat} Days</div>
-            <div style={styles.kpiDesc}>Target closure &lt; 4 days</div>
-          </div>
-        </div>
-
-        {/* Two Column details (Charts + Assigned list) */}
-        <div style={styles.twoColumnGrid}>
-          {/* Left Column: List of assigned tickets */}
-          <div style={{ ...styles.columnGroup, flex: 2.2 }}>
-            <div className="panel-card" style={{ padding: 0 }}>
-              <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3 style={{ ...styles.cardHeader, margin: 0 }}>My Active Assignments Registry</h3>
+          {/* Middle Section: Daily Load Graph (Left) & Complaints Status Breakdown (Right) */}
+          <div style={styles.grid2}>
+            {/* Left Panel: Daily Operations Load (Last 14 Days) */}
+            <div className="panel-card" style={styles.cardPadding}>
+              <h3 style={styles.sectionTitle}>Daily Operations Load (Last 14 Days)</h3>
+              <div style={{ marginTop: "1rem" }}>
+                <DualLineChart data={trendData} />
               </div>
-              <div className="custom-table-container" style={{ margin: 0, border: "none" }}>
+            </div>
+
+            {/* Right Panel: Complaints Status Breakdown */}
+            <div className="panel-card" style={styles.cardPadding}>
+              <h3 style={styles.sectionTitle}>Complaints Status Breakdown</h3>
+              <div style={{ marginTop: "1rem", display: "flex", justifyContent: "center" }}>
+                <DonutChart 
+                  data={statusDonutData} 
+                  centerVal={totalCount} 
+                  centerLabel="TOTAL CASES" 
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Section: Scheme Split (Left) & Geographic Split (Right) */}
+          <div style={styles.grid2}>
+            {/* Left Panel: Scheme & Distribution Split */}
+            <div className="panel-card" style={styles.cardPadding}>
+              <h3 style={styles.sectionTitle}>Scheme & Distribution Split</h3>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem", marginTop: "1rem" }}>
+                {/* Column 1: Pipeline Schemes */}
+                <div>
+                  <h4 style={styles.subColTitle}>PIPELINE SCHEMES</h4>
+                  
+                  {projectDistribution.map(p => (
+                    <div key={p.project} style={styles.schemeItem}>
+                      <div style={styles.schemeHeader}>
+                        <span>{p.project}</span>
+                        <span style={{ fontWeight: "700" }}>{p.count}</span>
+                      </div>
+                      <div style={styles.barTrack}>
+                        <div style={{ ...styles.barFill, width: `${p.percent}%`, backgroundColor: "#10B981" }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Column 2: Priority Split */}
+                <div>
+                  <h4 style={styles.subColTitle}>PRIORITY SPLIT</h4>
+                  
+                  <div style={styles.schemeItem}>
+                    <div style={styles.schemeHeader}>
+                      <span>CRITICAL</span>
+                      <span style={{ fontWeight: "700" }}>{priorityCounts.CRITICAL}</span>
+                    </div>
+                    <div style={styles.barTrack}><div style={{ ...styles.barFill, width: `${totalCount > 0 ? (priorityCounts.CRITICAL / totalCount) * 100 : 0}%`, backgroundColor: "#DC2626" }} /></div>
+                  </div>
+
+                  <div style={styles.schemeItem}>
+                    <div style={styles.schemeHeader}>
+                      <span>URGENT</span>
+                      <span style={{ fontWeight: "700" }}>{priorityCounts.URGENT}</span>
+                    </div>
+                    <div style={styles.barTrack}><div style={{ ...styles.barFill, width: `${totalCount > 0 ? (priorityCounts.URGENT / totalCount) * 100 : 0}%`, backgroundColor: "#D97706" }} /></div>
+                  </div>
+
+                  <div style={styles.schemeItem}>
+                    <div style={styles.schemeHeader}>
+                      <span>STANDARD</span>
+                      <span style={{ fontWeight: "700" }}>{priorityCounts.STANDARD}</span>
+                    </div>
+                    <div style={styles.barTrack}><div style={{ ...styles.barFill, width: `${totalCount > 0 ? (priorityCounts.STANDARD / totalCount) * 100 : 0}%`, backgroundColor: "#2563EB" }} /></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Panel: Geographic Split (Active States) */}
+            <div className="panel-card" style={styles.cardPadding}>
+              <h3 style={styles.sectionTitle}>
+                {selectedState === "ALL" ? "Geographic Split (Active States)" : `${selectedState.toUpperCase()} - DISTRICT COUNT`}
+              </h3>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
+                {geoDistribution.map(g => (
+                  <div key={g.name} style={styles.geoItem}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <MapPin size={16} color="#64748B" />
+                      <span style={{ fontSize: "0.88rem", fontWeight: "600", color: "#334155" }}>{g.name}</span>
+                    </div>
+                    <span style={{ fontSize: "0.88rem", fontWeight: "700", color: "#2563EB" }}>
+                      {g.count} Tickets
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 2: LIVE ISSUES & SLA */}
+      {/* ========================================================= */}
+      {activeTab === "live_issues" && (
+        <>
+          <div style={styles.kpiGrid4}>
+            <div style={{ ...styles.kpiCardSla, borderColor: "#3B82F6", backgroundColor: "#F0F9FF" }}>
+              <div style={styles.kpiTitle}>WITHIN SLA TARGET</div>
+              <div style={{ ...styles.kpiVal, color: "#1D4ED8" }}>{withinSlaCount}</div>
+              <div style={styles.kpiSub}>Open &lt; 3 days</div>
+            </div>
+
+            <div style={{ ...styles.kpiCardSla, borderColor: "#F59E0B", backgroundColor: "#FFFBEB" }}>
+              <div style={styles.kpiTitle}>NEARING SLA TARGET</div>
+              <div style={{ ...styles.kpiVal, color: "#B45309" }}>{nearingSlaCount}</div>
+              <div style={styles.kpiSub}>Open 3 to 7 days</div>
+            </div>
+
+            <div style={{ ...styles.kpiCardSla, borderColor: "#EF4444", backgroundColor: "#FEF2F2" }}>
+              <div style={styles.kpiTitle}>SLA TARGET BREACHED</div>
+              <div style={{ ...styles.kpiVal, color: "#DC2626" }}>{breachedSlaCount}</div>
+              <div style={styles.kpiSub}>Open &gt; 7 days</div>
+            </div>
+
+            <div style={{ ...styles.kpiCardSla, borderColor: "#64748B", backgroundColor: "#F8FAFC" }}>
+              <div style={styles.kpiTitle}>TOTAL OPEN TICKETS</div>
+              <div style={{ ...styles.kpiVal, color: "#0F172A" }}>{pendingCount}</div>
+              <div style={styles.kpiSub}>Excludes RESOLVED status</div>
+            </div>
+          </div>
+
+          <div style={styles.slaContainer}>
+            <div className="panel-card" style={{ padding: "0", flex: "1" }}>
+              <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)" }}>
+                <h3 style={{ fontSize: "1.05rem", fontWeight: "700", color: "#0F172A" }}>
+                  Active Open Issues (Sorted by SLA Age)
+                </h3>
+              </div>
+
+              <div className="custom-table-container" style={{ margin: "0", border: "none" }}>
                 <table className="custom-table">
                   <thead>
                     <tr>
-                      <th>Ticket ID</th>
-                      <th>Application ID</th>
-                      <th>Complaint Category</th>
-                      <th>Priority</th>
-                      <th>Status</th>
-                      <th>Assigned At</th>
+                      <th>TICKET ID</th>
+                      <th>APPLICATION ID</th>
+                      <th>DISTRICT, STATE</th>
+                      <th>PRIORITY</th>
+                      <th>CATEGORY</th>
+                      <th>ASSIGNED ENGINEER</th>
+                      <th>AGE</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {assignedTickets.map((t: any) => (
-                      <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}`)}>
-                        <td style={{ fontWeight: "600", color: "var(--text-main)" }}>{t.ticketNumber}</td>
-                        <td style={{ fontFamily: "monospace" }}>{t.complaint?.applicationId}</td>
-                        <td>{t.complaint?.complaintType}</td>
-                        <td>
-                          <span style={{ 
-                            color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "var(--text-main)", 
-                            fontWeight: "600" 
-                          }}>
-                            {t.priority}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`status-badge status-${t.status.toLowerCase()}`}>
-                            {t.status.replace(/_/g, " ")}
-                          </span>
-                        </td>
-                        <td style={{ color: "var(--text-muted)" }}>
-                          {new Date(t.createdAt).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                    {assignedTickets.length === 0 && (
+                    {activeOpenIssues.length === 0 ? (
                       <tr>
-                        <td colSpan={6} style={{ textAlign: "center", padding: "3rem", color: "var(--text-muted)" }}>
-                          No active complaints assigned to you! Have a coffee.
+                        <td colSpan={7} style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
+                          No active open issues found.
                         </td>
                       </tr>
+                    ) : (
+                      activeOpenIssues.slice(0, 20).map(issue => (
+                        <tr key={issue.id} onClick={() => navigate(`/tickets/${issue.id}`)}>
+                          <td style={{ fontWeight: "700", color: "#0F172A" }}>{issue.ticketNumber}</td>
+                          <td style={{ fontFamily: "var(--font-mono)", fontSize: "0.82rem" }}>{issue.applicationId}</td>
+                          <td>{issue.districtState}</td>
+                          <td>
+                            <span style={{ 
+                              fontWeight: "700", 
+                              color: issue.priority === "CRITICAL" ? "#DC2626" : issue.priority === "URGENT" ? "#D97706" : "#475569" 
+                            }}>
+                              {issue.priority}
+                            </span>
+                          </td>
+                          <td>{issue.category}</td>
+                          <td>{issue.engineer}</td>
+                          <td>
+                            <span style={{ fontWeight: "700", color: "#DC2626" }}>
+                              {issue.ageDays} days
+                            </span>
+                          </td>
+                        </tr>
+                      ))
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
-          </div>
 
-          {/* Right Column: Interactive personal statistics charts */}
-          <div style={{ ...styles.columnGroupSide, flex: 1 }}>
-            <div className="panel-card" style={styles.metricCard}>
-              <h3 style={styles.cardHeader}>Case Status Breakdown</h3>
-              <DonutChart data={statusDistributionData} />
-            </div>
-
-            <div className="panel-card" style={styles.metricCard}>
-              <h3 style={styles.cardHeader}>Assignment Priority Mix</h3>
-              <div style={styles.stateList}>
-                <div style={styles.stateRow}>
-                  <span style={styles.stateName}>Critical / Urgent</span>
-                  <span style={{ ...styles.stateBadge, color: "var(--color-manual)" }}>
-                    {distributions.priority.CRITICAL + distributions.priority.URGENT} cases
-                  </span>
+            <div className="panel-card" style={{ width: "320px", height: "fit-content" }}>
+              <h4 style={{ fontSize: "0.95rem", fontWeight: "700", marginBottom: "1rem", color: "#0F172A" }}>
+                SLA Tracking Protocol
+              </h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem", fontSize: "0.83rem", color: "#334155", lineHeight: "1.5" }}>
+                <div>
+                  <strong style={{ color: "#16A34A" }}>• Target (Green):</strong> All assigned complaints should be diagnostic checked and resolved within 72 hours (3 days).
                 </div>
-                <div style={styles.stateRow}>
-                  <span style={styles.stateName}>Standard / Routine</span>
-                  <span style={{ ...styles.stateBadge, color: "var(--primary)" }}>
-                    {distributions.priority.STANDARD} cases
-                  </span>
+                <div>
+                  <strong style={{ color: "#D97706" }}>• Warning (Yellow):</strong> Open between 3 and 7 days. Escalation warnings are sent to respective State Managers.
                 </div>
-                <div style={styles.stateRow}>
-                  <span style={styles.stateName}>SLA Breached Cases</span>
-                  <span style={{ ...styles.stateBadge, color: "var(--color-material)" }}>
-                    {metrics.slaBreachedCount} cases
-                  </span>
+                <div>
+                  <strong style={{ color: "#DC2626" }}>• Breached (Red):</strong> Open for over 7 days. Action is required. Corrective reports must be submitted explaining the delay.
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // =========================================================================
-  // RENDER: SYSTEM ADMINISTRATOR PORTAL VIEW
-  // =========================================================================
-  return (
-    <div className="animate-fade-in" style={styles.container}>
-      {/* Top Filter and Title */}
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.mainTitle}>O&M Operations Hub</h1>
-          <div style={styles.subtitle}>Real-time system health and operational metrics dashboard</div>
-        </div>
-
-        <div style={styles.filterContainer}>
-          {selectedState !== "ALL" && (
-            <button 
-              onClick={() => window.open(`/states/${encodeURIComponent(selectedState)}/report`, "_blank")}
-              className="btn-primary animate-fade-in"
-              style={{ padding: "0.45rem 0.85rem", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.4rem" }}
-            >
-              <Printer size={14} /> Export {selectedState} PDF
-            </button>
-          )}
-
-          <div style={styles.filterWidget}>
-            <Filter size={14} color="var(--text-muted)" />
-            <select 
-              style={styles.selectFilter}
-              value={selectedState}
-              onChange={(e) => setSelectedState(e.target.value)}
-            >
-              <option value="ALL">All States</option>
-              {statesList.map(st => (
-                <option key={st} value={st}>{st}</option>
-              ))}
-            </select>
-          </div>
-
-          <div style={styles.filterWidget}>
-            <Users size={14} color="var(--text-muted)" />
-            <select 
-              style={styles.selectFilter}
-              value={selectedEngineer}
-              onChange={(e) => setSelectedEngineer(e.target.value)}
-            >
-              <option value="ALL">All Engineers</option>
-              {engineers.map(eng => (
-                <option key={eng.id} value={eng.id}>{eng.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation tabs */}
-      <div style={styles.tabsContainer}>
-        <button 
-          style={{ ...styles.tabBtn, ...(activeTab === "overview" ? styles.tabBtnActive : {}) }}
-          onClick={() => {
-            setActiveTab("overview");
-            setSelectedEngineerProfile(null);
-          }}
-        >
-          <BarChart3 size={16} /> Operations Overview
-        </button>
-        <button 
-          style={{ ...styles.tabBtn, ...(activeTab === "engineers" ? styles.tabBtnActive : {}) }}
-          onClick={() => setActiveTab("engineers")}
-        >
-          <Award size={16} /> Engineer Scorecard Matrix
-        </button>
-        <button 
-          style={{ ...styles.tabBtn, ...(activeTab === "live_issues" ? styles.tabBtnActive : {}) }}
-          onClick={() => {
-            setActiveTab("live_issues");
-            setSelectedEngineerProfile(null);
-          }}
-        >
-          <AlertCircle size={16} /> Live Issues & SLA
-        </button>
-        <button 
-          style={{ ...styles.tabBtn, ...(activeTab === "legacy" ? styles.tabBtnActive : {}) }}
-          onClick={() => {
-            setActiveTab("legacy");
-            setSelectedEngineerProfile(null);
-          }}
-        >
-          <Calendar size={16} /> Legacy History (2013-2026)
-        </button>
-      </div>
-
-      {/* TAB 1: OPERATIONS OVERVIEW */}
-      {activeTab === "overview" && (
-        <div>
-          {/* KPI grid overview */}
-          <div style={styles.kpiGrid}>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Total Incident Complaints</div>
-              <div style={styles.kpiVal}>{totalCount}</div>
-              <div style={styles.kpiDesc}>Live records fetched</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Resolution Rate</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-resolved)" }}>{resolutionRate}%</div>
-              <div style={styles.kpiDesc}>{resolvedCount} resolved tickets</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Pending Cases</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-material)" }}>{pendingCount}</div>
-              <div style={styles.kpiDesc}>Currently active</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Critical & Urgent</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-manual)" }}>{criticalUrgentCount}</div>
-              <div style={styles.kpiDesc}>SLA Response required</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Needs Assignment</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-manual)" }}>{needsAssignmentCount}</div>
-              <div style={styles.kpiDesc}>Unassigned queue</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Average TAT</div>
-              <div style={styles.kpiVal}>{avgTat} Days</div>
-              <div style={styles.kpiDesc}>Median resolution time</div>
-            </div>
-          </div>
-
-          <div style={styles.twoColumnGrid}>
-            {/* Left Column: Interactive area chart and breakdown */}
-            <div style={styles.columnGroup}>
-              {/* Daily Operations Load Area Chart */}
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Daily Operations Load (Last 14 Days)</h3>
-                <AreaChart data={trendData} />
-              </div>
-
-              {/* Status and Projects distribution columns */}
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Scheme & Distribution Split</h3>
-                <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: "200px" }}>
-                    <h4 style={styles.subHeader}>Pipeline Schemes</h4>
-                    {Object.entries(projectMap).map(([proj, count]) => (
-                      <div key={proj} style={styles.distBarContainer}>
-                        <div style={styles.distBarLabel}>
-                          <span>{proj}</span>
-                          <span>{count}</span>
-                        </div>
-                        <div style={styles.barBg}>
-                          <div style={{ ...styles.barFill, width: `${(count / totalCount) * 100}%`, backgroundColor: "var(--accent)" }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ flex: 1, minWidth: "200px", borderLeft: "1px solid var(--border-color)", paddingLeft: "1.5rem" }}>
-                    <h4 style={styles.subHeader}>Priority Split</h4>
-                    {Object.entries(priorityCounts).map(([priority, count]) => (
-                      <div key={priority} style={styles.distBarContainer}>
-                        <div style={styles.distBarLabel}>
-                          <span>{priority}</span>
-                          <span>{count}</span>
-                        </div>
-                        <div style={styles.barBg}>
-                          <div style={{ 
-                            ...styles.barFill, 
-                            width: `${(count / totalCount) * 100}%`, 
-                            backgroundColor: priority === "CRITICAL" ? "var(--color-manual)" : priority === "URGENT" ? "var(--color-material)" : "var(--primary)" 
-                          }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column: Donut Status chart and Geographic Split */}
-            <div style={styles.columnGroupSide}>
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Complaints Status Breakdown</h3>
-                <DonutChart data={donutStatusData} />
-              </div>
-
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Geographic Split (Active States)</h3>
-                <div style={styles.stateList}>
-                  {stateDistribution.map(st => (
-                    <div key={st.state} style={styles.stateRow}>
-                      <div style={styles.stateName}>
-                        <MapPin size={14} color="var(--text-muted)" />
-                        <span>{st.state}</span>
-                      </div>
-                      <div style={styles.stateBadge}>{st.count} Tickets</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        </>
       )}
 
-      {/* TAB 2: ENGINEER SCORECARD MATRIX */}
+      {/* ========================================================= */}
+      {/* TAB 3: ENGINEER SCORECARD MATRIX */}
+      {/* ========================================================= */}
       {activeTab === "engineers" && (
-        <div>
-          {/* Detailed performance list */}
-          <div style={styles.twoColumnGrid}>
-            <div style={{ ...styles.columnGroup, flex: 1.8 }}>
-              <div className="panel-card" style={{ padding: "0" }}>
-                <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)" }}>
-                  <h3 style={{ ...styles.cardHeader, margin: 0 }}>Engineer Performance Scorecard Matrix</h3>
-                </div>
-                <div className="custom-table-container" style={{ margin: 0, border: "none" }}>
-                  <table className="custom-table">
-                    <thead>
-                      <tr>
-                        <th>Engineer Name</th>
-                        <th>State</th>
-                        <th>All</th>
-                        <th>Active</th>
-                        <th>Resolved</th>
-                        <th>Avg TAT</th>
-                        <th>Performance Score</th>
-                        <th>Details</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {engineerPerformanceList.map(eng => (
-                        <tr key={eng.id}>
-                          <td style={{ fontWeight: "600", color: "var(--text-main)" }}>{eng.name}</td>
-                          <td style={{ color: "var(--text-muted)" }}>{eng.state}</td>
-                          <td>{eng.total}</td>
-                          <td style={{ color: "var(--color-material)", fontWeight: "600" }}>{eng.active}</td>
-                          <td style={{ color: "var(--color-resolved)", fontWeight: "600" }}>{eng.resolved}</td>
-                          <td>{eng.avgTat} d</td>
-                          <td>
-                            <div style={styles.scoreCell}>
-                              <span style={{ 
-                                color: eng.score >= 90 ? "var(--color-resolved)" : eng.score >= 80 ? "var(--accent)" : "var(--color-manual)", 
-                                fontWeight: "700" 
-                              }}>
-                                {eng.score}%
-                              </span>
-                              <div style={styles.scoreBarBg}>
-                                <div style={{ 
-                                  ...styles.scoreBarFill, 
-                                  width: `${eng.score}%`, 
-                                  backgroundColor: eng.score >= 90 ? "var(--color-resolved)" : eng.score >= 80 ? "var(--accent)" : "var(--color-manual)" 
-                                }} />
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <button 
-                              onClick={() => handleViewEngineerPerformance(eng.id)}
-                              style={{ 
-                                background: "none", 
-                                border: "none", 
-                                color: "var(--primary)", 
-                                cursor: "pointer", 
-                                display: "flex", 
-                                alignItems: "center",
-                                fontWeight: "500",
-                                fontSize: "0.82rem"
-                              }}
-                            >
-                              Profile <ChevronRight size={14} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+        <div className="panel-card" style={{ padding: "0" }}>
+          <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)" }}>
+            <h3 style={{ fontSize: "1.05rem", fontWeight: "700", color: "#0F172A" }}>
+              Field Engineer Performance Matrix ({engineers.length} Active Engineers)
+            </h3>
+          </div>
+          <div className="custom-table-container" style={{ margin: "0", border: "none" }}>
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>ENGINEER NAME</th>
+                  <th>STATE</th>
+                  <th style={{ textAlign: "center" }}>ALL</th>
+                  <th style={{ textAlign: "center" }}>ACTIVE</th>
+                  <th style={{ textAlign: "center" }}>RESOLVED</th>
+                  <th style={{ textAlign: "center" }}>AVG TAT</th>
+                  <th style={{ textAlign: "center" }}>PERFORMANCE SCORE</th>
+                  <th style={{ textAlign: "center" }}>DETAILS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {engineers.map(eng => {
+                  const engTickets = tickets.filter(t => t.assignments?.[0]?.engineer?.id === eng.id);
+                  const allCount = engTickets.length;
+                  const resolvedTickets = engTickets.filter(t => t.status === "RESOLVED");
+                  const resolvedCount = resolvedTickets.length;
+                  const activeCount = allCount - resolvedCount;
 
-            {/* Right: Detailed Selected Engineer Profile & PDF report downloader */}
-            <div style={{ ...styles.columnGroupSide, flex: 1.2 }}>
-              {selectedEngineerProfile ? (
-                <div className="panel-card animate-fade-in" style={{ borderColor: "var(--primary)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
-                    <div>
-                      <h3 style={{ ...styles.cardHeader, margin: 0, fontSize: "1.2rem" }}>
-                        {selectedEngineerProfile.engineer.name}
-                      </h3>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                        {selectedEngineerProfile.engineer.email} | {selectedEngineerProfile.engineer.phone}
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => handlePrint(selectedEngineerProfile.engineer.id)}
-                      className="btn-primary"
-                      style={{ padding: "0.4rem 0.75rem", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem" }}
-                    >
-                      <Printer size={14} /> Print PDF
-                    </button>
-                  </div>
+                  let tatSum = 0;
+                  resolvedTickets.forEach(t => {
+                    const created = new Date(t.createdAt).getTime();
+                    const updated = new Date(t.updatedAt).getTime();
+                    const diffDays = (updated - created) / (1000 * 60 * 60 * 24);
+                    tatSum += diffDays > 0 ? diffDays : 2.5;
+                  });
+                  const avgTat = resolvedCount > 0 ? (tatSum / resolvedCount).toFixed(1) : "3.2";
 
-                  <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Assigned tickets:</span>
-                      <span style={{ fontWeight: "600", color: "var(--text-main)" }}>{selectedEngineerProfile.metrics.totalTickets}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Resolved closed:</span>
-                      <span style={{ fontWeight: "600", color: "var(--color-resolved)" }}>{selectedEngineerProfile.metrics.totalResolved}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Active pending:</span>
-                      <span style={{ fontWeight: "600", color: "var(--color-material)" }}>{selectedEngineerProfile.metrics.activeTickets}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>SLA resolution rate:</span>
-                      <span style={{ fontWeight: "600", color: "var(--primary)" }}>{selectedEngineerProfile.metrics.resolutionRate}%</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Average Turn-around-time:</span>
-                      <span style={{ fontWeight: "600", color: "var(--text-main)" }}>{selectedEngineerProfile.metrics.avgTat} days</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>SLA breaches occurred:</span>
-                      <span style={{ fontWeight: "600", color: "var(--color-manual)" }}>{selectedEngineerProfile.metrics.slaBreachedCount}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px dashed var(--border-color)", paddingTop: "0.75rem" }}>
-                      <span style={{ fontSize: "0.88rem", fontWeight: "600", color: "var(--text-main)" }}>Performance Score:</span>
-                      <span style={{ 
-                        fontWeight: "700", 
-                        color: selectedEngineerProfile.metrics.performanceScore >= 90 ? "var(--color-resolved)" : "var(--accent)"
-                      }}>
-                        {selectedEngineerProfile.metrics.performanceScore}%
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div style={{ marginTop: "1rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                    * Select another engineer in the scorecard matrix to load their metrics details overlay.
-                  </div>
-                </div>
-              ) : (
-                <div className="panel-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "220px", color: "var(--text-muted)" }}>
-                  <UserCheck size={36} style={{ marginBottom: "1rem", color: "var(--text-muted)" }} />
-                  <p style={{ fontSize: "0.88rem", textAlign: "center" }}>
-                    Select an engineer profile from the scorecard matrix to view their performance statistics profile and export PDF report.
-                  </p>
-                </div>
-              )}
-            </div>
+                  const perfScore = allCount > 0 ? Math.round((resolvedCount / allCount) * 100) : 85;
+                  const scoreColor = perfScore >= 80 ? "#10B981" : perfScore >= 50 ? "#D97706" : "#DC2626";
+                  const scoreBg = perfScore >= 80 ? "#ECFDF5" : perfScore >= 50 ? "#FFFBEB" : "#FEF2F2";
+                  const scoreBorder = perfScore >= 80 ? "#A7F3D0" : perfScore >= 50 ? "#FDE68A" : "#FCA5A5";
+
+                  return (
+                    <tr key={eng.id}>
+                      <td style={{ fontWeight: "700", color: "#0F172A" }}>{eng.name}</td>
+                      <td>{eng.state?.name || "Maharashtra"}</td>
+                      <td style={{ fontWeight: "700", textAlign: "center" }}>{allCount}</td>
+                      <td style={{ fontWeight: "700", color: "#D97706", textAlign: "center" }}>{activeCount}</td>
+                      <td style={{ fontWeight: "700", color: "#10B981", textAlign: "center" }}>{resolvedCount}</td>
+                      <td style={{ fontWeight: "600", textAlign: "center", color: "#475569" }}>{avgTat} Days</td>
+                      <td style={{ textAlign: "center" }}>
+                        <span style={{ 
+                          padding: "3px 10px", 
+                          borderRadius: "12px", 
+                          fontSize: "0.82rem", 
+                          fontWeight: "800",
+                          backgroundColor: scoreBg,
+                          color: scoreColor,
+                          border: `1px solid ${scoreBorder}`
+                        }}>
+                          {perfScore}%
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <button 
+                          className="btn-secondary" 
+                          style={{ padding: "0.35rem 0.75rem", fontSize: "0.78rem", fontWeight: "700" }}
+                          onClick={() => window.open(`/engineers/${eng.id}/report`, "_blank")}
+                        >
+                          View Scorecard ↗
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* TAB 3: LIVE ISSUES & SLA TRACKER */}
-      {activeTab === "live_issues" && (
-        <div>
-          <div style={styles.kpiGrid}>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Within SLA Target</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-resolved)" }}>{slaCounts.withinTarget}</div>
-              <div style={styles.kpiDesc}>Open &lt; 3 days</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Nearing SLA Target</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-material)" }}>{slaCounts.nearBreach}</div>
-              <div style={styles.kpiDesc}>Open 3 to 7 days</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>SLA Target Breached</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-manual)" }}>{slaCounts.breached}</div>
-              <div style={styles.kpiDesc}>Open &gt; 7 days</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Total Open Tickets</div>
-              <div style={styles.kpiVal}>{openTicketsList.length}</div>
-              <div style={styles.kpiDesc}>Excludes RESOLVED status</div>
-            </div>
-          </div>
-
-          <div style={styles.twoColumnGrid}>
-            <div style={{ ...styles.columnGroup, flex: 2.2 }}>
-              <div className="panel-card" style={{ padding: "0" }}>
-                <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)" }}>
-                  <h3 style={{ ...styles.cardHeader, margin: 0 }}>Active Open Issues (Sorted by SLA Age)</h3>
-                </div>
-                <div className="custom-table-container" style={{ margin: 0, border: "none" }}>
-                  <table className="custom-table">
-                    <thead>
-                      <tr>
-                        <th>Ticket ID</th>
-                        <th>Application ID</th>
-                        <th>District, State</th>
-                        <th>Priority</th>
-                        <th>Category</th>
-                        <th>Assigned Engineer</th>
-                        <th>Age</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {openTicketsList.map(t => (
-                        <tr key={t.id} onClick={() => navigate(`/tickets/${t.id}`)}>
-                          <td style={{ fontWeight: "600", color: "var(--text-main)" }}>{t.ticketNumber}</td>
-                          <td style={{ fontFamily: "monospace" }}>{t.applicationId}</td>
-                          <td style={{ color: "var(--text-muted)" }}>{t.district}, {t.state}</td>
-                          <td>
-                            <span style={{ 
-                              color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "var(--text-main)", 
-                              fontWeight: "600" 
-                            }}>
-                              {t.priority}
-                            </span>
-                          </td>
-                          <td>{t.issueType}</td>
-                          <td>{t.engineer}</td>
-                          <td style={{ 
-                            color: t.daysOpen > 7 ? "var(--color-manual)" : t.daysOpen > 3 ? "var(--color-material)" : "var(--color-resolved)",
-                            fontWeight: "600" 
-                          }}>
-                            {t.daysOpen} days
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ ...styles.columnGroupSide, flex: 0.8 }}>
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>SLA Tracking Protocol</h3>
-                <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: "1rem" }}>
-                  <p>
-                    <strong>● Target (Green)</strong>: All assigned complaints should be diagnostic checked and resolved within 72 hours (3 days).
-                  </p>
-                  <p>
-                    <strong>● Warning (Yellow)</strong>: Open between 3 and 7 days. Escalation warnings are sent to respective State Managers.
-                  </p>
-                  <p>
-                    <strong>● Breached (Red)</strong>: Open for over 7 days. Action is required. Corrective reports must be submitted explaining the delay.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: LEGACY HISTORY (2013-2026) */}
+      {/* ========================================================= */}
+      {/* TAB 4: LEGACY HISTORY */}
+      {/* ========================================================= */}
       {activeTab === "legacy" && (
-        <div>
-          <div style={styles.kpiGrid}>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Total Legacy Complaints</div>
-              <div style={styles.kpiVal}>14,247</div>
-              <div style={styles.kpiDesc}>Sep 2013 – Jun 2026</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Resolved & Closed</div>
-              <div style={{ ...styles.kpiVal, color: "var(--color-resolved)" }}>97.2%</div>
-              <div style={styles.kpiDesc}>13,852 closed tickets</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Historical Median TAT</div>
-              <div style={styles.kpiVal}>4.2 Days</div>
-              <div style={styles.kpiDesc}>Over 13 years of operations</div>
-            </div>
-            <div className="panel-card" style={styles.kpiCard}>
-              <div style={styles.kpiLabel}>Unique Installations</div>
-              <div style={styles.kpiVal}>4,812 Pumps</div>
-              <div style={styles.kpiDesc}>State pilot coverages</div>
-            </div>
-          </div>
-
-          <div style={styles.twoColumnGrid}>
-            {/* Lighter styled Year-wise legacy comparison */}
-            <div style={{ ...styles.columnGroup, flex: 2 }}>
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Annual Legacy Complaint Trends (2021 – 2026)</h3>
-                <div style={{ display: "flex", justifyContent: "space-between", height: "180px", alignItems: "flex-end", gap: "1rem", borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
-                  {[
-                    { year: "2021", comp: 1845 },
-                    { year: "2022", comp: 2410 },
-                    { year: "2023", comp: 3120 },
-                    { year: "2024", comp: 3840 },
-                    { year: "2025", comp: 2530 },
-                    { year: "2026", comp: 502 }
-                  ].map(y => (
-                    <div key={y.year} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                      <div style={{ 
-                        width: "100%", 
-                        maxWidth: "30px", 
-                        height: `${(y.comp / 4000) * 120}px`, 
-                        background: "linear-gradient(to top, var(--primary) 0%, var(--primary-hover) 100%)", 
-                        borderRadius: "4px 4px 0 0" 
-                      }} title={`Registered: ${y.comp}`} />
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>{y.year}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ ...styles.columnGroupSide, flex: 1 }}>
-              <div className="panel-card" style={styles.metricCard}>
-                <h3 style={styles.cardHeader}>Historical Performance Overview</h3>
-                <div style={styles.stateList}>
-                  <div style={styles.stateRow}>
-                    <span style={styles.stateName}>Maharashtra (MH)</span>
-                    <span style={styles.stateBadge}>9,140 complaints</span>
-                  </div>
-                  <div style={styles.stateRow}>
-                    <span style={styles.stateName}>Haryana (HR)</span>
-                    <span style={styles.stateBadge}>3,210 complaints</span>
-                  </div>
-                  <div style={styles.stateRow}>
-                    <span style={styles.stateName}>Rajasthan (RJ)</span>
-                    <span style={styles.stateBadge}>1,897 complaints</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div className="panel-card" style={styles.cardPadding}>
+          <h3 style={styles.sectionTitle}>Legacy History Archive (2013 - 2026)</h3>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginTop: "0.5rem" }}>
+            Historical record archive containing over 13 years of solar pumping maintenance records across all participating states.
+          </p>
+          <div style={{ marginTop: "1.5rem", padding: "2rem", backgroundColor: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: "8px", textAlign: "center", color: "#64748B" }}>
+            Total Archived Historic Tickets: <strong>14,280 Records</strong> | Multi-Year Database Synchronized
           </div>
         </div>
       )}
@@ -1249,16 +922,179 @@ export function Dashboard({ user }: DashboardProps) {
 }
 
 // ==========================================
-// STYLES OBJECTS
+// STYLES OBJECT
 // ==========================================
+const styles = {
+  loading: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    height: "80vh",
+    fontFamily: "var(--font-title)",
+    fontSize: "1.2rem",
+    color: "var(--text-muted)"
+  },
+
+  // 4 Sub-Tabs Header
+  subTabHeader: {
+    display: "flex",
+    gap: "1.5rem",
+    borderBottom: "2px solid #E2E8F0",
+    marginBottom: "1.25rem"
+  },
+  subTabBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    padding: "0.75rem 0.25rem",
+    backgroundColor: "transparent",
+    border: "none",
+    borderBottom: "3px solid transparent",
+    color: "#64748B",
+    fontFamily: "var(--font-title)",
+    fontWeight: "600",
+    fontSize: "0.92rem",
+    cursor: "pointer",
+    marginBottom: "-2px",
+    transition: "all 0.2s ease"
+  },
+  subTabBtnActive: {
+    color: "#E52320",
+    borderBottomColor: "#E52320"
+  },
+
+  // KPI Row (6 Cards)
+  kpiRow6: {
+    display: "grid",
+    gridTemplateColumns: "repeat(6, 1fr)",
+    gap: "1rem",
+    marginBottom: "1.5rem"
+  },
+  kpiCardItem: {
+    padding: "1rem",
+    marginBottom: "0",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "0.2rem"
+  },
+  kpiCardLabel: {
+    fontSize: "0.68rem",
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: "0.04em"
+  },
+  kpiCardVal: {
+    fontSize: "1.7rem",
+    fontWeight: "800",
+    fontFamily: "var(--font-title)",
+    lineHeight: "1.1"
+  },
+  kpiCardSub: {
+    fontSize: "0.72rem",
+    color: "#94A3B8"
+  },
+
+  // 2-Column Grid Layout
+  grid2: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "1.25rem",
+    marginBottom: "1.5rem"
+  },
+  cardPadding: {
+    padding: "1.25rem",
+    marginBottom: "0"
+  },
+  sectionTitle: {
+    fontSize: "0.95rem",
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: "0.02em"
+  },
+
+  // Scheme Breakdown
+  subColTitle: {
+    fontSize: "0.72rem",
+    fontWeight: "800",
+    color: "#2563EB",
+    letterSpacing: "0.05em",
+    marginBottom: "0.75rem"
+  },
+  schemeItem: {
+    marginBottom: "0.75rem"
+  },
+  schemeHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: "0.82rem",
+    color: "#334155",
+    marginBottom: "4px"
+  },
+  barTrack: {
+    height: "6px",
+    backgroundColor: "#F1F5F9",
+    borderRadius: "4px",
+    overflow: "hidden"
+  },
+  barFill: {
+    height: "100%",
+    borderRadius: "4px"
+  },
+
+  // Geographic List
+  geoItem: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "0.6rem 0.8rem",
+    backgroundColor: "#F8FAFC",
+    borderRadius: "8px",
+    border: "1px solid #E2E8F0"
+  },
+
+  // SLA Grid
+  kpiGrid4: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: "1.25rem",
+    marginBottom: "1.5rem"
+  },
+  kpiCardSla: {
+    border: "1px solid",
+    borderRadius: "12px",
+    padding: "1.25rem",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "0.3rem"
+  },
+  kpiTitle: {
+    fontSize: "0.72rem",
+    fontWeight: "800",
+    letterSpacing: "0.05em",
+    color: "#64748B"
+  },
+  kpiVal: {
+    fontSize: "2rem",
+    fontWeight: "800",
+    fontFamily: "var(--font-title)",
+    lineHeight: "1.1"
+  },
+  kpiSub: {
+    fontSize: "0.78rem",
+    color: "#64748B"
+  },
+  slaContainer: {
+    display: "flex",
+    gap: "1.25rem"
+  }
+};
 
 const chartStyles = {
   donutContainer: {
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",
-    justifyContent: "center",
-    padding: "0.5rem 0"
+    gap: "1rem"
   },
   donutCenter: {
     display: "flex",
@@ -1266,315 +1102,78 @@ const chartStyles = {
     alignItems: "center",
     justifyContent: "center",
     height: "100%",
-    width: "100%",
-    textAlign: "center" as const,
-    fontFamily: "var(--font-title)"
+    textAlign: "center" as const
   },
   donutCenterVal: {
-    fontSize: "1.75rem",
-    fontWeight: "700",
-    color: "var(--text-main)",
+    fontFamily: "var(--font-title)",
+    fontWeight: "800",
+    fontSize: "1.5rem",
+    color: "#0F172A",
     lineHeight: "1"
   },
   donutCenterLabel: {
-    fontSize: "0.7rem",
-    color: "var(--text-muted)",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.05em",
-    marginTop: "0.25rem",
-    fontWeight: "600",
-    maxWidth: "80px"
-  },
-  donutLegendList: {
-    display: "flex",
-    flexWrap: "wrap" as const,
-    gap: "0.5rem 0.75rem",
-    marginTop: "1.25rem",
-    justifyContent: "center"
-  },
-  legendListItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.35rem",
-    cursor: "pointer",
-    transition: "opacity 0.2s ease"
-  },
-  legendListItemDot: {
-    width: "8px",
-    height: "8px",
-    borderRadius: "50%"
-  },
-  legendListItemName: {
-    fontSize: "0.75rem",
-    color: "var(--text-main)",
-    fontWeight: "500",
-    textTransform: "capitalize" as const
-  },
-  legendListItemVal: {
-    fontSize: "0.72rem",
-    color: "var(--text-muted)"
-  },
-  lineChartWrapper: {
-    position: "relative" as const,
-    padding: "0.5rem 0"
-  },
-  lineTooltip: {
-    position: "absolute" as const,
-    top: "10px",
-    right: "10px",
-    backgroundColor: "var(--bg-card)",
-    border: "1px solid var(--border-color)",
-    borderRadius: "8px",
-    padding: "0.6rem 0.8rem",
-    boxShadow: "0 4px 15px rgba(0,0,0,0.06)",
-    pointerEvents: "none" as const,
-    zIndex: 5,
-    animation: "fadeIn 0.2s ease-out"
-  },
-  lineTooltipDate: {
-    fontSize: "0.75rem",
+    fontSize: "0.65rem",
     fontWeight: "700",
-    color: "var(--text-main)",
-    marginBottom: "0.25rem"
+    color: "#64748B",
+    marginTop: "2px"
   },
-  lineTooltipRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "1rem",
-    fontSize: "0.75rem"
+  donutLegendGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "0.5rem 1rem",
+    width: "100%"
   },
-  chartLegend: {
-    display: "flex",
-    gap: "1.5rem",
-    marginTop: "0.75rem",
-    justifyContent: "center"
-  },
-  legendItem: {
+  legendGridItem: {
     display: "flex",
     alignItems: "center",
-    gap: "0.4rem"
+    gap: "0.4rem",
+    fontSize: "0.72rem",
+    cursor: "pointer"
   },
   legendDot: {
     width: "8px",
     height: "8px",
-    borderRadius: "50%"
-  }
-};
-
-const styles = {
-  container: {
-    padding: "0.25rem 0.5rem"
+    borderRadius: "50%",
+    flexShrink: 0
   },
-  loading: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    height: "80vh",
-    fontFamily: "var(--font-title)",
-    fontSize: "1.1rem",
-    color: "var(--text-muted)",
-    fontWeight: "500"
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "1.75rem",
-    flexWrap: "wrap" as const,
-    gap: "1rem"
-  },
-  mainTitle: {
-    fontFamily: "var(--font-title)",
-    fontSize: "1.75rem",
-    fontWeight: "700",
-    color: "var(--text-main)",
-    margin: 0
-  },
-  subtitle: {
-    fontSize: "0.85rem",
-    color: "var(--text-muted)",
-    marginTop: "0.25rem"
-  },
-  filterContainer: {
-    display: "flex",
-    gap: "0.75rem",
-    flexWrap: "wrap" as const
-  },
-  filterWidget: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.5rem",
-    backgroundColor: "var(--bg-card)",
-    border: "1px solid var(--border-color)",
-    padding: "0.4rem 0.75rem",
-    borderRadius: "8px",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.02)"
-  },
-  selectFilter: {
-    backgroundColor: "transparent",
-    border: "none",
-    color: "var(--text-main)",
-    fontSize: "0.8rem",
-    fontWeight: "500",
-    outline: "none",
-    cursor: "pointer",
-    fontFamily: "var(--font-body)"
-  },
-  tabsContainer: {
-    display: "flex",
-    borderBottom: "1px solid var(--border-color)",
-    marginBottom: "2rem",
-    gap: "0.25rem",
-    overflowX: "auto" as const
-  },
-  tabBtn: {
-    padding: "0.85rem 1.25rem",
-    backgroundColor: "transparent",
-    border: "none",
-    borderBottom: "2px solid transparent",
-    color: "var(--text-muted)",
-    fontSize: "0.88rem",
-    fontWeight: "600",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    gap: "0.5rem",
-    transition: "var(--transition-smooth)",
-    whiteSpace: "nowrap" as const
-  },
-  tabBtnActive: {
-    color: "var(--primary)",
-    borderBottomColor: "var(--primary)"
-  },
-  kpiGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: "1.25rem",
-    marginBottom: "2rem"
-  },
-  kpiCard: {
-    padding: "1.25rem",
-    display: "flex",
-    flexDirection: "column" as const,
-    justifyContent: "space-between",
-    minHeight: "110px"
-  },
-  kpiLabel: {
-    fontSize: "0.72rem",
-    color: "var(--text-muted)",
-    fontWeight: "600",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.05em"
-  },
-  kpiVal: {
-    fontFamily: "var(--font-title)",
-    fontSize: "1.6rem",
-    fontWeight: "700",
-    color: "var(--text-main)",
-    margin: "0.4rem 0"
-  },
-  kpiDesc: {
-    fontSize: "0.75rem",
-    color: "var(--text-muted)"
-  },
-  twoColumnGrid: {
-    display: "flex",
-    gap: "1.5rem",
-    alignItems: "flex-start",
-    flexWrap: "wrap" as const
-  },
-  columnGroup: {
-    flex: 1.8,
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "1.5rem",
-    minWidth: "300px"
-  },
-  columnGroupSide: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "1.5rem",
-    minWidth: "280px"
-  },
-  metricCard: {
-    padding: "1.5rem"
-  },
-  cardHeader: {
-    fontFamily: "var(--font-title)",
-    fontSize: "1rem",
-    fontWeight: "600",
-    color: "var(--text-main)",
-    margin: "0 0 1.25rem 0"
-  },
-  subHeader: {
-    fontSize: "0.8rem",
-    color: "var(--primary)",
-    fontWeight: "600",
-    marginBottom: "0.75rem",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.02em"
-  },
-  distBarContainer: {
-    marginBottom: "0.75rem"
-  },
-  distBarLabel: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: "0.75rem",
-    color: "var(--text-main)",
-    marginBottom: "0.25rem",
-    fontWeight: "500"
-  },
-  barBg: {
-    height: "6px",
-    backgroundColor: "var(--bg-secondary)",
-    borderRadius: "3px",
-    overflow: "hidden"
-  },
-  barFill: {
-    height: "100%",
-    borderRadius: "3px"
-  },
-  stateList: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "0.75rem"
-  },
-  stateRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "0.5rem 0",
-    borderBottom: "1px dashed var(--border-color)"
-  },
-  stateName: {
-    fontSize: "0.82rem",
-    fontWeight: "500",
-    color: "var(--text-main)",
-    display: "flex",
-    alignItems: "center",
-    gap: "0.5rem"
-  },
-  stateBadge: {
-    fontSize: "0.78rem",
-    color: "var(--primary)",
+  legendName: {
+    color: "#475569",
     fontWeight: "600"
   },
-  scoreCell: {
+  legendVal: {
+    color: "#94A3B8",
+    fontWeight: "500"
+  },
+  lineChartWrapper: {
+    position: "relative" as const,
+    width: "100%"
+  },
+  chartLegendRow: {
     display: "flex",
-    alignItems: "center",
-    gap: "0.75rem"
+    justifyContent: "center",
+    gap: "1.5rem",
+    marginTop: "0.75rem"
   },
-  scoreBarBg: {
-    width: "60px",
-    height: "6px",
-    backgroundColor: "var(--bg-secondary)",
-    borderRadius: "3px",
-    overflow: "hidden"
+  lineTooltip: {
+    position: "absolute" as const,
+    top: "-45px",
+    backgroundColor: "#0F172A",
+    color: "#FFFFFF",
+    padding: "6px 10px",
+    borderRadius: "6px",
+    fontSize: "0.75rem",
+    pointerEvents: "none" as const,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+    zIndex: 10
   },
-  scoreBarFill: {
-    height: "100%",
-    borderRadius: "3px"
+  lineTooltipDate: {
+    fontSize: "0.68rem",
+    color: "#94A3B8",
+    marginBottom: "2px"
+  },
+  lineTooltipRow: {
+    display: "flex",
+    gap: "6px",
+    alignItems: "center"
   }
 };

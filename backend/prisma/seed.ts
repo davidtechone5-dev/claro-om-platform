@@ -79,41 +79,6 @@ async function main() {
   });
   console.log(`✅ Seeded Master Installation: ${appId} (Client: Acme Corporates)`);
 
-  // 5. Create an Engineer User & Profile
-  const engineerEmail = "engineer@claro.com";
-  const engineerUserPass = bcrypt.hashSync("engineer123", salt);
-
-  const engineerUser = await prisma.user.upsert({
-    where: { email: engineerEmail },
-    update: { passwordHash: engineerUserPass },
-    create: {
-      email: engineerEmail,
-      fullName: "Alex Rivera",
-      passwordHash: engineerUserPass,
-      roleId: roleMap["Engineer"].id,
-      isActive: true
-    }
-  });
-
-  const engineer = await prisma.engineer.upsert({
-    where: { email: engineerEmail },
-    update: {
-      stateId: state.id,
-      districtId: district.id,
-      isActive: true
-    },
-    create: {
-      userId: engineerUser.id,
-      name: "Alex Rivera",
-      email: engineerEmail,
-      phone: "+15550199",
-      stateId: state.id,
-      districtId: district.id,
-      isActive: true
-    }
-  });
-  console.log(`✅ Seeded Engineer Profile: ${engineer.name} (${engineerEmail}, password: engineer123)`);
-
   console.log("🌱 Database seeding completed successfully!");
 }
 

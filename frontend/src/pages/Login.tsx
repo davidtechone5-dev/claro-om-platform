@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../utils/api";
-import { KeyRound, Mail, AlertCircle, Compass } from "lucide-react";
+import { KeyRound, Mail, AlertCircle } from "lucide-react";
 
 interface LoginProps {
   onLoginSuccess: (token: string, user: any) => void;
@@ -31,14 +31,9 @@ export function Login({ onLoginSuccess }: LoginProps) {
     }
   };
 
-  const handleQuickFill = (role: "admin" | "engineer") => {
-    if (role === "admin") {
-      setEmail("admin@claro.com");
-      setPassword("admin123");
-    } else {
-      setEmail("engineer@claro.com");
-      setPassword("engineer123");
-    }
+  const handleQuickFill = () => {
+    setEmail("admin@claro.com");
+    setPassword("admin123");
     setError(null);
   };
 
@@ -46,29 +41,37 @@ export function Login({ onLoginSuccess }: LoginProps) {
     <div style={styles.container}>
       <div className="panel-card" style={styles.card}>
         <div style={styles.header}>
-          <div style={styles.logoBadge}>
-            <Compass size={28} color="var(--primary)" />
+          {/* Official Claro Energy Brand Logo Badge */}
+          <div className="claro-logo-badge" style={{ margin: "0 auto 1.25rem auto" }}>
+            <div className="claro-logo-top">
+              <span className="claro-logo-top-text">CLARO<sup>®</sup></span>
+            </div>
+            <div className="claro-logo-bottom">
+              <span className="claro-logo-bottom-text">ENERGY</span>
+            </div>
           </div>
-          <h1 style={styles.title}>CLARO O&M V2</h1>
+
+          <h1 style={styles.title}>O&M Platform V2</h1>
           <p style={styles.subtitle}>Solar Operations Management & Performance Hub</p>
         </div>
 
         {error && (
           <div style={styles.errorAlert}>
-            <AlertCircle size={18} color="var(--color-manual)" />
+            <AlertCircle size={18} color="#DC2626" />
             <span style={styles.errorText}>{error}</span>
           </div>
         )}
 
         <form onSubmit={handleSubmit} style={styles.form}>
-          <div className="form-group">
-            <label className="form-label" style={styles.label}>
-              <Mail size={14} style={{ marginRight: "6px", display: "inline" }} />
-              Operational Email
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              <Mail size={15} color="#64748B" />
+              <span>Operational Email</span>
             </label>
             <input
               type="email"
               className="form-input"
+              style={styles.input}
               placeholder="e.g. admin@claro.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -77,14 +80,15 @@ export function Login({ onLoginSuccess }: LoginProps) {
             />
           </div>
 
-          <div className="form-group">
-            <label className="form-label" style={styles.label}>
-              <KeyRound size={14} style={{ marginRight: "6px", display: "inline" }} />
-              Security Password
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              <KeyRound size={15} color="#64748B" />
+              <span>Security Password</span>
             </label>
             <input
               type="password"
               className="form-input"
+              style={styles.input}
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -104,23 +108,14 @@ export function Login({ onLoginSuccess }: LoginProps) {
         </form>
 
         <div style={styles.quickFillContainer}>
-          <p style={styles.quickFillTitle}>Quick Developer Sandbox Access:</p>
-          <div style={styles.quickFillButtons}>
-            <button
-              onClick={() => handleQuickFill("admin")}
-              style={{ ...styles.quickBtn, borderColor: "var(--primary)", color: "var(--primary)" }}
-              disabled={loading}
-            >
-              Role: System Admin
-            </button>
-            <button
-              onClick={() => handleQuickFill("engineer")}
-              style={{ ...styles.quickBtn, borderColor: "var(--color-assigned)", color: "var(--color-assigned)" }}
-              disabled={loading}
-            >
-              Role: Field Engineer
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleQuickFill}
+            style={styles.quickBtn}
+            disabled={loading}
+          >
+            Fill System Admin Demo Credentials
+          </button>
         </div>
       </div>
     </div>
@@ -134,107 +129,103 @@ const styles = {
     justifyContent: "center",
     minHeight: "100vh",
     width: "100vw",
-    backgroundColor: "var(--bg-primary)",
-    padding: "1rem"
+    backgroundColor: "#F8FAFC",
+    padding: "1.5rem"
   },
   card: {
     width: "100%",
-    maxWidth: "440px",
+    maxWidth: "420px",
     padding: "2.5rem 2rem",
-    boxShadow: "0 10px 40px rgba(0, 0, 0, 0.05), 0 0 1px rgba(0,0,0,0.1)",
-    backgroundColor: "var(--bg-card)",
-    borderRadius: "20px"
+    boxShadow: "0 10px 30px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04)",
+    backgroundColor: "#FFFFFF",
+    borderRadius: "16px",
+    border: "1px solid #E2E8F0"
   },
   header: {
     textAlign: "center" as const,
-    marginBottom: "2rem"
-  },
-  logoBadge: {
-    width: "60px",
-    height: "60px",
-    borderRadius: "16px",
-    backgroundColor: "var(--bg-secondary)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    margin: "0 auto 1rem auto",
-    border: "1px solid var(--border-color)",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.02)"
+    marginBottom: "1.75rem"
   },
   title: {
     fontFamily: "var(--font-title)",
-    fontSize: "1.75rem",
-    fontWeight: "700",
-    color: "var(--text-main)",
-    letterSpacing: "0.02em"
+    fontSize: "1.6rem",
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: "-0.02em"
   },
   subtitle: {
-    fontSize: "0.85rem",
-    color: "var(--text-muted)",
-    marginTop: "0.4rem",
+    fontSize: "0.83rem",
+    color: "#64748B",
+    marginTop: "0.3rem",
     lineHeight: "1.4"
   },
   form: {
     display: "flex",
     flexDirection: "column" as const,
-    gap: "0.5rem"
+    gap: "1.25rem"
+  },
+  formGroup: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "0.4rem"
   },
   label: {
     display: "flex",
-    alignItems: "center"
+    alignItems: "center",
+    gap: "0.4rem",
+    fontSize: "0.82rem",
+    fontWeight: "700",
+    color: "#334155"
+  },
+  input: {
+    width: "100%",
+    boxSizing: "border-box" as const,
+    padding: "0.75rem 1rem",
+    fontSize: "0.9rem",
+    color: "#0F172A",
+    backgroundColor: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "8px"
   },
   submitBtn: {
     width: "100%",
-    padding: "0.85rem",
+    padding: "0.8rem",
     fontSize: "0.95rem",
-    fontWeight: "600",
-    marginTop: "0.75rem",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center"
+    fontWeight: "700",
+    backgroundColor: "#E52320",
+    color: "#FFFFFF",
+    borderRadius: "8px",
+    border: "none",
+    cursor: "pointer",
+    marginTop: "0.5rem"
   },
   errorAlert: {
     display: "flex",
     alignItems: "center",
     gap: "0.75rem",
     padding: "0.75rem 1rem",
-    backgroundColor: "hsla(355, 85%, 45%, 0.08)",
-    border: "1px solid hsla(355, 85%, 45%, 0.15)",
+    backgroundColor: "#FEF2F2",
+    border: "1px solid #FCA5A5",
     borderRadius: "8px",
     marginBottom: "1.25rem"
   },
   errorText: {
     fontSize: "0.82rem",
-    color: "var(--color-manual)",
-    fontWeight: "500"
+    color: "#DC2626",
+    fontWeight: "600"
   },
   quickFillContainer: {
-    marginTop: "2rem",
-    borderTop: "1px dashed var(--border-color)",
-    paddingTop: "1.5rem",
+    marginTop: "1.75rem",
+    borderTop: "1px solid #E2E8F0",
+    paddingTop: "1.25rem",
     textAlign: "center" as const
   },
-  quickFillTitle: {
-    fontSize: "0.75rem",
-    color: "var(--text-muted)",
-    fontWeight: "600",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.05em",
-    marginBottom: "0.75rem"
-  },
-  quickFillButtons: {
-    display: "flex",
-    gap: "0.75rem",
-    justifyContent: "center"
-  },
   quickBtn: {
-    backgroundColor: "var(--bg-card)",
-    border: "1px solid",
-    borderRadius: "8px",
-    padding: "0.4rem 0.8rem",
-    fontSize: "0.75rem",
-    fontWeight: "600",
+    backgroundColor: "transparent",
+    border: "none",
+    color: "#E52320",
+    fontSize: "0.8rem",
+    fontWeight: "700",
     cursor: "pointer",
-    transition: "var(--transition-smooth)"
+    textDecoration: "underline"
   }
 };

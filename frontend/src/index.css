@@ -1,37 +1,29 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* HSL Sleek Light Palette - Premium and Ergonomic */
-  --bg-primary: hsl(220, 24%, 96%); /* Very soft light slate-grey background */
-  --bg-secondary: hsl(220, 20%, 92%); /* Sidebar / Sub-header background */
-  --bg-card: hsl(0, 0%, 100%); /* Clean white panels */
-  --border-color: hsl(220, 15%, 86%); /* Light borders */
+  /* Official Claro Energy Palette */
+  --claro-red: #E52320;
+  --claro-red-hover: #C81A17;
+  --claro-red-light: rgba(229, 35, 32, 0.08);
+  --claro-black: #111111;
   
-  --primary: hsl(210, 100%, 43%); /* Stronger Solar Blue for light background contrast */
-  --primary-hover: hsl(210, 100%, 50%);
-  --primary-glow: hsla(210, 100%, 43%, 0.15);
+  --bg-primary: #F8FAFC; /* Clean, ergonomic slate-grey background */
+  --bg-secondary: #FFFFFF; /* Sidebar / Header background */
+  --bg-card: #FFFFFF; /* Crisp white card surface */
+  --border-color: #E2E8F0; /* Soft border */
   
-  --accent: hsl(174, 90%, 35%); /* Cyan/Teal Spark */
-  --accent-glow: hsla(174, 90%, 35%, 0.12);
+  --primary: #E52320;
+  --primary-hover: #C81A17;
+  --primary-glow: rgba(229, 35, 32, 0.15);
   
-  --text-main: hsl(220, 35%, 15%); /* High contrast dark grey text */
-  --text-muted: hsl(220, 14%, 44%); /* Clear secondary grey text */
-  
-  /* Status Colors (Optimized for white background contrast) */
-  --color-received: hsl(210, 100%, 40%); /* Dark Blue */
-  --color-assigned: hsl(275, 75%, 48%); /* Darker Purple */
-  --color-visit: hsl(185, 85%, 38%); /* Deep Cyan */
-  --color-material: hsl(30, 95%, 42%); /* Deep Orange/Amber */
-  --color-insurance: hsl(325, 80%, 44%); /* Rose Pink */
-  --color-resolved: hsl(142, 65%, 32%); /* Soft Green */
-  --color-manual: hsl(355, 85%, 45%); /* Clear Red */
+  --text-main: #0F172A; /* High contrast deep slate text */
+  --text-muted: #64748B; /* Secondary muted text */
   
   --font-title: 'Outfit', sans-serif;
   --font-body: 'Inter', sans-serif;
+  --font-mono: monospace;
   
-  --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  --glass-bg: rgba(255, 255, 255, 0.8);
-  --glass-blur: blur(10px);
+  --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * {
@@ -40,39 +32,62 @@
   padding: 0;
 }
 
-body {
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   background-color: var(--bg-primary);
   color: var(--text-main);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
-  min-height: 100vh;
-  overflow-x: hidden;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-title);
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text-main);
   letter-spacing: -0.02em;
 }
 
-/* App Grid Layout */
+/* Master Ergonomic Flex Layout */
 .app-container {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  min-height: 100vh;
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Fixed Width Sidebar */
+aside {
+  width: 260px !important;
+  min-width: 260px !important;
+  max-width: 260px !important;
+  height: 100vh !important;
+  flex-shrink: 0 !important;
+  background-color: #FFFFFF !important;
+  border-right: 1px solid var(--border-color) !important;
+  z-index: 10 !important;
+}
+
+/* Main Content Area */
+.main-content {
+  flex: 1 !important;
+  height: 100vh !important;
+  overflow-y: auto !important;
+  padding: 1.75rem 2.25rem !important;
+  box-sizing: border-box !important;
+  background: radial-gradient(circle at top right, rgba(229, 35, 32, 0.02), transparent 500px);
 }
 
 /* Mobile Header Bar */
 .mobile-header-bar {
   display: none;
-  background-color: var(--bg-card);
+  background-color: #FFFFFF;
   border-bottom: 1px solid var(--border-color);
   padding: 0.75rem 1.25rem;
   justify-content: space-between;
   align-items: center;
-  position: sticky;
-  top: 0;
-  z-index: 99;
 }
 
 .mobile-hamburger {
@@ -80,291 +95,219 @@ h1, h2, h3, h4, h5, h6 {
   border: none;
   cursor: pointer;
   color: var(--text-main);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem;
 }
 
-.main-content {
-  padding: 2rem;
-  overflow-y: auto;
-  height: 100vh;
-  background: radial-gradient(circle at top right, hsla(210, 100%, 43%, 0.04), transparent 600px);
-  position: relative;
-}
-
-/* Sidebar Responsive Positioning */
-.sidebar-container {
-  position: relative;
-}
-
-/* Card panel widget */
+/* Panel Card */
 .panel-card {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 1.5rem;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
-  transition: var(--transition-smooth);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  margin-bottom: 1.5rem;
 }
 
-.panel-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--primary-hover);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06), 0 0 12px var(--primary-glow);
-}
-
-/* Page Headers */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .page-title {
-  font-size: 2rem;
+  font-size: 1.5rem;
+  font-weight: 800;
   color: var(--text-main);
-  background: linear-gradient(135deg, var(--text-main) 0%, var(--text-muted) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
-/* Custom interactive inputs & buttons */
-.btn-primary {
-  background: linear-gradient(135deg, var(--primary) 0%, hsl(210, 100%, 35%) 100%);
-  color: #fff;
-  border: none;
-  padding: 0.65rem 1.25rem;
-  font-family: var(--font-title);
-  font-weight: 500;
-  border-radius: 8px;
-  cursor: pointer;
-  box-shadow: 0 3px 10px var(--primary-glow);
-  transition: var(--transition-smooth);
-}
-
-.btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px var(--primary-glow), 0 0 8px var(--primary);
-  filter: brightness(1.05);
-}
-
-.btn-secondary {
-  background-color: var(--bg-card);
-  color: var(--text-main);
+/* Form inputs */
+.form-input {
+  background-color: #FFFFFF;
   border: 1px solid var(--border-color);
-  padding: 0.65rem 1.25rem;
-  font-family: var(--font-title);
-  font-weight: 500;
   border-radius: 8px;
-  cursor: pointer;
+  padding: 0.55rem 0.9rem;
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
   transition: var(--transition-smooth);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
 }
 
-.btn-secondary:hover {
-  background-color: var(--bg-secondary);
-  border-color: var(--text-muted);
+.form-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-glow);
 }
 
-/* Tables styling */
+/* Table Styling */
 .custom-table-container {
   width: 100%;
   overflow-x: auto;
-  border-radius: 12px;
+  background-color: #FFFFFF;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
-  background-color: var(--bg-card);
-  margin-top: 1.5rem;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.02);
 }
 
 .custom-table {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
+  font-size: 0.88rem;
 }
 
 .custom-table th {
-  background-color: var(--bg-secondary);
-  padding: 0.85rem 1.15rem;
+  background-color: #F8FAFC;
+  color: #475569;
   font-family: var(--font-title);
-  font-weight: 600;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border-color);
-  font-size: 0.8rem;
+  font-weight: 700;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  padding: 0.8rem 1.1rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .custom-table td {
-  padding: 0.95rem 1.15rem;
+  padding: 0.8rem 1.1rem;
   border-bottom: 1px solid var(--border-color);
-  color: var(--text-main);
-  font-size: 0.875rem;
-}
-
-.custom-table tbody tr {
-  transition: var(--transition-smooth);
+  color: #0F172A !important;
+  vertical-align: middle;
 }
 
 .custom-table tbody tr:hover {
-  background-color: var(--bg-primary);
-  cursor: pointer;
+  background-color: #F1F5F9;
 }
 
-/* Status badge pills */
+/* Status Badges */
 .status-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.65rem;
+  padding: 0.2rem 0.6rem;
   border-radius: 20px;
   font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-.status-received { background-color: hsla(210, 100%, 40%, 0.08); color: var(--color-received); }
-.status-assigned { background-color: hsla(275, 75%, 48%, 0.08); color: var(--color-assigned); }
-.status-visit { background-color: hsla(185, 85%, 38%, 0.08); color: var(--color-visit); }
-.status-material { background-color: hsla(30, 95%, 42%, 0.08); color: var(--color-material); }
-.status-insurance { background-color: hsla(325, 80%, 44%, 0.08); color: var(--color-insurance); }
-.status-resolved { background-color: hsla(142, 65%, 32%, 0.08); color: var(--color-resolved); }
-.status-manual { background-color: hsla(355, 85%, 45%, 0.08); color: var(--color-manual); }
+.status-received, .status-assigned {
+  background-color: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+}
 
-/* Custom Form elements */
-.form-group {
-  margin-bottom: 1.25rem;
+.status-initial_visit_completed, .status-visited {
+  background-color: #ECFDF5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
+}
+
+.status-material_requested {
+  background-color: #FFFBEB;
+  color: #B45309;
+  border: 1px solid #FDE68A;
+}
+
+.status-resolved {
+  background-color: #ECFDF5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
+}
+
+.status-manual_assignment_required, .status-manual {
+  background-color: #FEF2F2;
+  color: #B91C1C;
+  border: 1px solid #FCA5A5;
+}
+
+/* Primary Button */
+.btn-primary {
+  background-color: var(--primary);
+  color: #FFFFFF;
+  border: none;
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  font-weight: 700;
+  font-family: var(--font-title);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+
+/* Official Claro Energy Logo Badge Component */
+.claro-logo-badge {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  border: 2px solid #111111;
+  border-radius: 4px;
+  overflow: hidden;
+  width: 140px;
 }
 
-.form-label {
-  font-family: var(--font-title);
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  font-weight: 500;
+.claro-logo-top {
+  background-color: #FFFFFF;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.form-input {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-main);
-  border-radius: 8px;
-  padding: 0.65rem 0.85rem;
-  font-family: var(--font-body);
-  font-size: 0.92rem;
-  transition: var(--transition-smooth);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+.claro-logo-top-text {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 900;
+  font-size: 1.15rem;
+  color: #E52320;
+  letter-spacing: 0.05em;
+  line-height: 1;
 }
 
-.form-input:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 8px var(--primary-glow);
+.claro-logo-bottom {
+  background-color: #111111;
+  padding: 3px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Overlay for Mobile Sidebar */
-.mobile-sidebar-overlay {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.4);
-  z-index: 998;
-  backdrop-filter: blur(2px);
-}
-
-/* Print Styling optimization */
-@media print {
-  body {
-    background-color: #fff !important;
-    color: #000 !important;
-  }
-  .app-container {
-    display: block !important;
-  }
-  aside, .mobile-header-bar, .mobile-sidebar-overlay, button, .filterContainer, .tabsContainer {
-    display: none !important;
-  }
-  .main-content {
-    padding: 0 !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
-  .panel-card {
-    border: 1px solid #ddd !important;
-    box-shadow: none !important;
-    page-break-inside: avoid;
-  }
+.claro-logo-bottom-text {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: #FFFFFF;
+  letter-spacing: 0.28em;
+  line-height: 1;
 }
 
 /* Animations */
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-in-out;
+}
+
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.35s ease-out forwards;
-}
-
-/* ==========================================
-   MOBILE & TABLET RESPONSIVENESS
-   ========================================== */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .app-container {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
-
+  aside {
+    display: none !important;
+  }
+  aside.open {
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+  }
   .mobile-header-bar {
     display: flex;
   }
-
-  /* Absolute Sidebar drawer for mobile */
-  aside {
-    position: fixed !important;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 260px;
-    z-index: 999;
-    transform: translateX(-100%);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.1);
-  }
-
-  aside.open {
-    transform: translateX(0);
-  }
-
-  .mobile-sidebar-overlay.open {
-    display: block;
-  }
-
   .main-content {
-    height: calc(100vh - 57px);
-    padding: 1.25rem;
-  }
-
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .page-title {
-    font-size: 1.75rem;
-  }
-
-  .btn-primary, .btn-secondary {
-    width: 100%;
-    text-align: center;
+    padding: 1rem !important;
   }
 }

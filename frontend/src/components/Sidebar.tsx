@@ -23,10 +23,16 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
 
   return (
     <aside className={isOpen ? "open" : ""} style={styles.sidebar}>
+      {/* Official Claro Energy Logo Header */}
       <div style={styles.logoContainer}>
-        <h2 style={styles.logoText}>
-          CLARO <span style={styles.logoSubText}>O&M V2</span>
-        </h2>
+        <div className="claro-logo-badge">
+          <div className="claro-logo-top">
+            <span className="claro-logo-top-text">CLARO<sup>®</sup></span>
+          </div>
+          <div className="claro-logo-bottom">
+            <span className="claro-logo-bottom-text">ENERGY</span>
+          </div>
+        </div>
       </div>
       
       <nav style={styles.nav}>
@@ -113,23 +119,13 @@ const styles = {
     display: "flex",
     flexDirection: "column" as const,
     height: "100vh",
-    padding: "2rem 1.25rem",
+    padding: "1.75rem 1.25rem",
     boxSizing: "border-box" as const
   },
   logoContainer: {
-    marginBottom: "2.5rem"
-  },
-  logoText: {
-    fontFamily: "var(--font-title)",
-    fontSize: "1.4rem",
-    fontWeight: "700",
-    color: "var(--text-main)",
-    letterSpacing: "0.05em"
-  },
-  logoSubText: {
-    color: "var(--primary)",
-    fontSize: "0.85rem",
-    fontWeight: "500"
+    marginBottom: "2rem",
+    display: "flex",
+    justifyContent: "center"
   },
   nav: {
     display: "flex",
@@ -146,15 +142,15 @@ const styles = {
     color: "var(--text-muted)",
     textDecoration: "none",
     fontFamily: "var(--font-title)",
-    fontWeight: "500",
+    fontWeight: "600",
     fontSize: "0.92rem",
     transition: "var(--transition-smooth)"
   },
   navLinkActive: {
-    backgroundColor: "var(--bg-card)",
+    backgroundColor: "rgba(229, 35, 32, 0.08)",
     color: "var(--primary)",
     boxShadow: "inset 4px 0 0 var(--primary)",
-    border: "1px solid var(--border-color)"
+    border: "1px solid rgba(229, 35, 32, 0.2)"
   },
   userFooter: {
     display: "flex",
@@ -178,7 +174,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontWeight: "600",
+    fontWeight: "700",
     fontFamily: "var(--font-title)"
   },
   userInfo: {
@@ -199,7 +195,7 @@ const styles = {
     color: "var(--text-muted)"
   },
   pilotBadge: {
-    backgroundColor: "#ea580c",
+    backgroundColor: "var(--primary)",
     color: "#fff",
     fontSize: "0.55rem",
     fontWeight: "700",
@@ -215,10 +211,10 @@ const styles = {
     padding: "0.6rem",
     borderRadius: "8px",
     border: "1px solid var(--border-color)",
-    backgroundColor: "var(--bg-card)",
+    backgroundColor: "#FFFFFF",
     color: "var(--color-manual)",
     fontFamily: "var(--font-title)",
-    fontWeight: "500",
+    fontWeight: "600",
     fontSize: "0.85rem",
     cursor: "pointer",
     transition: "var(--transition-smooth)"
