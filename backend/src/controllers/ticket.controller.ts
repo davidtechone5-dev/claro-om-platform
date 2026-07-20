@@ -255,7 +255,7 @@ export const ticketController = {
             ]
           }
         },
-        include: { state: true },
+        include: { state: true, district: { include: { state: true } } },
         orderBy: { name: "asc" }
       });
 
@@ -263,8 +263,31 @@ export const ticketController = {
       const deduplicatedMap = new Map<string, any>();
       engineers.forEach(eng => {
         const normKey = eng.name.trim().toLowerCase();
+        let stateName = eng.state?.name || eng.district?.state?.name;
+        if (!stateName) {
+          if (
+            normKey.includes("sikander") || 
+            normKey.includes("anish") || 
+            normKey.includes("sushil") || 
+            normKey.includes("avinash") || 
+            normKey.includes("narender") ||
+            normKey.includes("bhagwan") ||
+            normKey.includes("kiran") ||
+            normKey.includes("rakesh") ||
+            normKey.includes("parmananad")
+          ) {
+            stateName = "Haryana";
+          } else {
+            stateName = "Maharashtra";
+          }
+        }
+        const engObj = {
+          ...eng,
+          state: { name: stateName }
+        };
+
         if (!deduplicatedMap.has(normKey)) {
-          deduplicatedMap.set(normKey, eng);
+          deduplicatedMap.set(normKey, engObj);
         }
       });
 
@@ -518,7 +541,7 @@ export const ticketController = {
             ]
           }
         },
-        include: { state: true },
+        include: { state: true, district: { include: { state: true } } },
         orderBy: { name: "asc" }
       });
 
@@ -538,13 +561,58 @@ export const ticketController = {
         return name.length <= 3 ? name : name.substring(0, 2).toUpperCase();
       };
 
+      const resolveEngineerState = (eng: any, assignments: any[]): { stateCode: string; stateName: string } => {
+        if (eng.state?.name) {
+          const code = helperStateCode(eng.state.name);
+          if (code !== "OTH") return { stateCode: code, stateName: eng.state.name };
+        }
+
+        if (eng.district?.state?.name) {
+          const code = helperStateCode(eng.district.state.name);
+          if (code !== "OTH") return { stateCode: code, stateName: eng.district.state.name };
+        }
+
+        for (const a of assignments) {
+          const ticketState = a.ticket?.complaint?.masterInstallation?.state?.name || 
+                             a.ticket?.complaint?.district?.state?.name;
+          if (ticketState) {
+            const code = helperStateCode(ticketState);
+            if (code !== "OTH") return { stateCode: code, stateName: ticketState };
+          }
+        }
+
+        const norm = eng.name?.trim()?.toLowerCase() || "";
+        if (
+          norm.includes("sikander") || 
+          norm.includes("anish") || 
+          norm.includes("sushil") || 
+          norm.includes("avinash") || 
+          norm.includes("narender") ||
+          norm.includes("bhagwan") ||
+          norm.includes("kiran") ||
+          norm.includes("rakesh") ||
+          norm.includes("parmananad")
+        ) {
+          return { stateCode: "HR", stateName: "Haryana" };
+        }
+
+        return { stateCode: "MH", stateName: "Maharashtra" };
+      };
+
       const engineerReports = await Promise.all(
         engineers.map(async (eng) => {
           const assignments = await prisma.ticketAssignment.findMany({
             where: { engineerId: eng.id, deletedAt: null },
             include: {
               ticket: {
-                include: { serviceReports: { where: { deletedAt: null }, orderBy: { reportDate: "desc" } } }
+                include: { 
+                  complaint: {
+                    include: {
+                      masterInstallation: { include: { state: true, district: { include: { state: true } } } }
+                    }
+                  },
+                  serviceReports: { where: { deletedAt: null }, orderBy: { reportDate: "desc" } } 
+                }
               }
             }
           });
@@ -592,11 +660,13 @@ export const ticketController = {
           const assignedInWindow = windowTickets.length;
           const resolvedInWindow = windowTickets.filter(t => t.status === "RESOLVED").length;
 
+          const { stateCode, stateName } = resolveEngineerState(eng, assignments);
+
           return {
             id: eng.id,
             name: eng.name,
-            stateCode: helperStateCode(eng.state?.name),
-            stateName: eng.state?.name || "Maharashtra",
+            stateCode,
+            stateName,
             allCount,
             receivedCount,
             assignedCount,
