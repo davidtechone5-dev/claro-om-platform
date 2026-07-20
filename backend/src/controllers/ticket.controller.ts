@@ -572,7 +572,26 @@ export const ticketController = {
         })
       );
 
-      engineerReports.sort((a, b) => b.totalAssigned - a.totalAssigned);
+      // Group engineerReports by normalized name to guarantee single row per engineer in any environment
+      const deduplicatedMap = new Map<string, any>();
+
+      engineerReports.forEach(item => {
+        const normKey = item.name.trim().toLowerCase();
+        if (!deduplicatedMap.has(normKey)) {
+          deduplicatedMap.set(normKey, { ...item });
+        } else {
+          const existing = deduplicatedMap.get(normKey)!;
+          existing.totalAssigned += item.totalAssigned;
+          existing.totalResolved += item.totalResolved;
+          existing.assignedInWindow += item.assignedInWindow;
+          existing.resolvedInWindow += item.resolvedInWindow;
+          existing.assignedBeforeStart += item.assignedBeforeStart;
+          existing.resolvedBeforeStart += item.resolvedBeforeStart;
+        }
+      });
+
+      const finalEngineerReports = Array.from(deduplicatedMap.values());
+      finalEngineerReports.sort((a, b) => b.totalAssigned - a.totalAssigned);
 
       const allActiveAssignedTickets = await prisma.ticket.count({
         where: {
@@ -589,16 +608,16 @@ export const ticketController = {
       });
 
       const totals = {
-        totalAssigned: engineerReports.reduce((acc, e) => acc + e.totalAssigned, 0),
-        totalResolved: engineerReports.reduce((acc, e) => acc + e.totalResolved, 0),
-        assignedInWindow: engineerReports.reduce((acc, e) => acc + e.assignedInWindow, 0),
-        resolvedInWindow: engineerReports.reduce((acc, e) => acc + e.resolvedInWindow, 0),
-        assignedBeforeStart: engineerReports.reduce((acc, e) => acc + e.assignedBeforeStart, 0),
-        resolvedBeforeStart: engineerReports.reduce((acc, e) => acc + e.resolvedBeforeStart, 0)
+        totalAssigned: finalEngineerReports.reduce((acc, e) => acc + e.totalAssigned, 0),
+        totalResolved: finalEngineerReports.reduce((acc, e) => acc + e.totalResolved, 0),
+        assignedInWindow: finalEngineerReports.reduce((acc, e) => acc + e.assignedInWindow, 0),
+        resolvedInWindow: finalEngineerReports.reduce((acc, e) => acc + e.resolvedInWindow, 0),
+        assignedBeforeStart: finalEngineerReports.reduce((acc, e) => acc + e.assignedBeforeStart, 0),
+        resolvedBeforeStart: finalEngineerReports.reduce((acc, e) => acc + e.resolvedBeforeStart, 0)
       };
 
       const summaryCards = {
-        activeEngineers: engineerReports.length,
+        activeEngineers: finalEngineerReports.length,
         totalAssigned: totals.totalAssigned,
         totalResolved: totals.totalResolved,
         assignedWindow: totals.assignedInWindow,
@@ -624,7 +643,7 @@ export const ticketController = {
           endDate: endFilter.toISOString().split("T")[0]
         },
         summaryCards,
-        engineers: engineerReports,
+        engineers: finalEngineerReports,
         totals
       });
     } catch (e: any) {
