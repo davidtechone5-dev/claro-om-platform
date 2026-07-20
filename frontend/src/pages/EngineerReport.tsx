@@ -4,7 +4,6 @@ import { api } from "../utils/api";
 import { 
   ArrowLeft, 
   Printer, 
-  Compass, 
   FileText, 
   AlertCircle,
   Calendar
