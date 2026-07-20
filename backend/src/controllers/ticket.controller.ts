@@ -8,7 +8,7 @@ export const ticketController = {
    * GET /api/v1/tickets
    */
   async listTickets(req: AuthenticatedRequest, res: Response) {
-    const { status, priority, limit = "20", offset = "0", search, startDate, endDate } = req.query;
+    const { status, priority, limit = "20", offset = "0", search, startDate, endDate, engineerId } = req.query;
 
     const whereClause: any = { deletedAt: null };
     if (status && status.toString() !== "ALL") {
@@ -16,6 +16,14 @@ export const ticketController = {
     }
     if (priority) {
       whereClause.priority = priority.toString();
+    }
+    if (engineerId && engineerId.toString() !== "ALL") {
+      whereClause.assignments = {
+        some: {
+          engineerId: engineerId.toString(),
+          deletedAt: null
+        }
+      };
     }
 
     if (startDate || endDate) {

@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
-import { Calendar } from "lucide-react";
+import { Calendar, User } from "lucide-react";
 
 export function Tickets() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [tickets, setTickets] = useState<any[]>([]);
+  const [engineers, setEngineers] = useState<any[]>([]);
+  const [selectedEngineer, setSelectedEngineer] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [startDate, setStartDate] = useState("");
@@ -15,6 +17,18 @@ export function Tickets() {
   const [totalCount, setTotalCount] = useState(0);
 
   const limit = 25;
+
+  useEffect(() => {
+    async function loadEngineers() {
+      try {
+        const data = await api.getEngineers();
+        setEngineers(data || []);
+      } catch (err) {
+        console.error("Failed to load engineers list:", err);
+      }
+    }
+    loadEngineers();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -29,7 +43,8 @@ export function Tickets() {
           limit,
           offset,
           startDate || undefined,
-          endDate || undefined
+          endDate || undefined,
+          selectedEngineer || undefined
         );
         if (active) {
           setTickets(data.tickets || []);
@@ -52,7 +67,7 @@ export function Tickets() {
       active = false;
       clearTimeout(timer);
     };
-  }, [statusFilter, searchTerm, page, startDate, endDate]);
+  }, [statusFilter, searchTerm, page, startDate, endDate, selectedEngineer]);
 
   const handleFilterChange = (status: string) => {
     setStatusFilter(status);
@@ -87,16 +102,33 @@ export function Tickets() {
         <div>
           <h1 className="page-title">Tickets Registry</h1>
           <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: "2px" }}>
-            Search, filter by date, engineer name, or complaint status
+            Search, filter by engineer, complaint status, or date range
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          {/* Engineer Dropdown */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "#F8FAFC", padding: "0.35rem 0.65rem", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+            <User size={15} color="var(--primary)" />
+            <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#475569" }}>Engineer:</span>
+            <select
+              value={selectedEngineer}
+              onChange={(e) => { setSelectedEngineer(e.target.value); setPage(1); }}
+              className="form-input"
+              style={{ padding: "0.25rem 0.45rem", fontSize: "0.78rem", minWidth: "160px" }}
+            >
+              <option value="ALL">All Engineers ({engineers.length})</option>
+              {engineers.map(eng => (
+                <option key={eng.id} value={eng.id}>{eng.name}</option>
+              ))}
+            </select>
+          </div>
+
           <input 
             type="text" 
-            placeholder="Search by Ticket ID, Customer, Engineer Name..." 
+            placeholder="Search Ticket ID, Customer..." 
             className="form-input"
-            style={styles.searchBar}
+            style={{ width: "240px", fontSize: "0.82rem" }}
             value={searchTerm}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
@@ -119,9 +151,9 @@ export function Tickets() {
               className="form-input"
               style={{ padding: "0.25rem 0.45rem", fontSize: "0.78rem", width: "130px" }}
             />
-            {(startDate || endDate) && (
+            {(startDate || endDate || selectedEngineer !== "ALL") && (
               <button 
-                onClick={() => { setStartDate(""); setEndDate(""); setPage(1); }}
+                onClick={() => { setStartDate(""); setEndDate(""); setSelectedEngineer("ALL"); setPage(1); }}
                 className="btn-secondary"
                 style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
               >
