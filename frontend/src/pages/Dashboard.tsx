@@ -6,7 +6,8 @@ import {
   MapPin, 
   Clock, 
   FileText,
-  Award
+  Award,
+  Calendar
 } from "lucide-react";
 
 // ==========================================
@@ -276,6 +277,9 @@ export function Dashboard({ user }: DashboardProps) {
   
   const [selectedState, setSelectedState] = useState("ALL");
   const [selectedEngineer, setSelectedEngineer] = useState("ALL");
+
+  const [matrixStartDate, setMatrixStartDate] = useState<string>("");
+  const [matrixEndDate, setMatrixEndDate] = useState<string>("");
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -827,10 +831,44 @@ export function Dashboard({ user }: DashboardProps) {
       {/* ========================================================= */}
       {activeTab === "engineers" && (
         <div className="panel-card" style={{ padding: "0" }}>
-          <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)" }}>
-            <h3 style={{ fontSize: "1.05rem", fontWeight: "700", color: "#0F172A" }}>
-              Field Engineer Performance Matrix ({engineers.length} Active Engineers)
-            </h3>
+          <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+            <div>
+              <h3 style={{ fontSize: "1.05rem", fontWeight: "700", color: "#0F172A" }}>
+                Field Engineer Performance Matrix ({engineers.length} Active Engineers)
+              </h3>
+              <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: "2px" }}>
+                Filter engineer workloads & performance metrics by assignment/created dates
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Calendar size={15} color="var(--primary)" />
+              <span style={{ fontSize: "0.82rem", fontWeight: "700", color: "#334155" }}>Time Filter:</span>
+              <input 
+                type="date" 
+                value={matrixStartDate}
+                onChange={(e) => setMatrixStartDate(e.target.value)}
+                className="form-input"
+                style={{ padding: "0.35rem 0.6rem", fontSize: "0.8rem", width: "135px" }}
+              />
+              <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: "600" }}>to</span>
+              <input 
+                type="date" 
+                value={matrixEndDate}
+                onChange={(e) => setMatrixEndDate(e.target.value)}
+                className="form-input"
+                style={{ padding: "0.35rem 0.6rem", fontSize: "0.8rem", width: "135px" }}
+              />
+              {(matrixStartDate || matrixEndDate) && (
+                <button 
+                  onClick={() => { setMatrixStartDate(""); setMatrixEndDate(""); }}
+                  className="btn-secondary"
+                  style={{ padding: "0.35rem 0.65rem", fontSize: "0.78rem" }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
           <div className="custom-table-container" style={{ margin: "0", border: "none" }}>
             <table className="custom-table">
@@ -849,11 +887,29 @@ export function Dashboard({ user }: DashboardProps) {
               <tbody>
                 {engineers.map(eng => {
                   const normName = eng.name?.trim()?.toLowerCase();
-                  const engTickets = tickets.filter(t => 
-                    t.assignments?.some((a: any) => 
+                  const engTickets = tickets.filter(t => {
+                    const isAssigned = t.assignments?.some((a: any) => 
                       a.engineer?.id === eng.id || (normName && a.engineer?.name?.trim()?.toLowerCase() === normName)
-                    )
-                  );
+                    );
+                    if (!isAssigned) return false;
+
+                    if (matrixStartDate || matrixEndDate) {
+                      const tDateStr = t.createdAt || t.assignments?.[0]?.assignedAt;
+                      if (!tDateStr) return false;
+                      const tTime = new Date(tDateStr).getTime();
+
+                      if (matrixStartDate) {
+                        const startMs = new Date(matrixStartDate + "T00:00:00").getTime();
+                        if (tTime < startMs) return false;
+                      }
+                      if (matrixEndDate) {
+                        const endMs = new Date(matrixEndDate + "T23:59:59.999").getTime();
+                        if (tTime > endMs) return false;
+                      }
+                    }
+
+                    return true;
+                  });
                   const allCount = engTickets.length;
                   const resolvedTickets = engTickets.filter(t => t.status === "RESOLVED");
                   const resolvedCount = resolvedTickets.length;
