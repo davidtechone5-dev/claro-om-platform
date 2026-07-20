@@ -82,7 +82,7 @@ export function Tickets() {
         <h1 className="page-title">Tickets Registry</h1>
         <input 
           type="text" 
-          placeholder="Search by Ticket ID, Customer, or Application ID..." 
+          placeholder="Search by Ticket ID, Customer, Engineer Name, or Application ID..." 
           className="form-input"
           style={styles.searchBar}
           value={searchTerm}

@@ -311,3 +311,125 @@ aside {
     padding: 1rem !important;
   }
 }
+
+/* ==========================================
+   OFFICIAL PRINT & PDF GENERATION STYLES
+   ========================================== */
+.print-only {
+  display: none !important;
+}
+
+@media print {
+  .no-print,
+  aside,
+  .mobile-header-bar,
+  .mobile-sidebar-overlay,
+  button,
+  input,
+  .presetGroup,
+  .datePickerCell,
+  .searchRow {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  html, body, .app-container, .main-content {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .main-content {
+    padding: 1cm 1cm !important;
+  }
+
+  .panel-card,
+  .custom-table-container,
+  div {
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  th, td {
+    padding: 6px 8px !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    color: #0f172a !important;
+    font-size: 0.8rem !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .claro-logo-badge {
+    display: inline-flex !important;
+    flex-direction: column !important;
+    border-radius: 4px !important;
+    overflow: hidden !important;
+    border: 1px solid #111111 !important;
+    width: fit-content !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .claro-logo-top {
+    background-color: #FFFFFF !important;
+    padding: 4px 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .claro-logo-top-text {
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 900 !important;
+    font-size: 1.2rem !important;
+    color: #E52320 !important;
+    letter-spacing: 0.05em !important;
+    line-height: 1 !important;
+  }
+
+  .claro-logo-bottom {
+    background-color: #111111 !important;
+    padding: 3px 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .claro-logo-bottom-text {
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 800 !important;
+    font-size: 0.75rem !important;
+    color: #FFFFFF !important;
+    letter-spacing: 0.28em !important;
+    line-height: 1 !important;
+  }
+}

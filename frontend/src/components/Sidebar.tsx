@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Ticket, Warehouse, Wrench, LogOut } from "lucide-react";
+import { LayoutDashboard, Ticket, Warehouse, Wrench, Users, LogOut } from "lucide-react";
 
 interface SidebarProps {
   user: {
@@ -87,6 +87,18 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
                 <span>AMC Tracker</span>
                 <span style={styles.pilotBadge}>MH PILOT</span>
               </span>
+            </NavLink>
+
+            <NavLink 
+              to="/engineers/overview" 
+              onClick={handleLinkClick}
+              style={({ isActive }) => ({
+                ...styles.navLink,
+                ...(isActive ? styles.navLinkActive : {})
+              })}
+            >
+              <Users size={20} />
+              <span>Engineer Reports</span>
             </NavLink>
           </>
         )}

@@ -1,17 +1,23 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
 import { 
   ArrowLeft, 
   Printer, 
   Compass, 
   FileText, 
-  AlertCircle
+  AlertCircle,
+  Calendar
 } from "lucide-react";
 
 export function EngineerReport() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  const startDate = searchParams.get("startDate") || "";
+  const endDate = searchParams.get("endDate") || "";
+
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +27,7 @@ export function EngineerReport() {
       if (!id) return;
       try {
         setLoading(true);
-        const stats = await api.getEngineerPerformance(id);
+        const stats = await api.getEngineerPerformance(id, startDate || undefined, endDate || undefined);
         setData(stats);
       } catch (err: any) {
         setError(err.message || "Failed to load engineer report data.");
@@ -30,17 +36,7 @@ export function EngineerReport() {
       }
     }
     loadReportData();
-  }, [id]);
-
-  // Auto trigger browser print once loaded
-  useEffect(() => {
-    if (data && !loading && !error) {
-      const timer = setTimeout(() => {
-        window.print();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [data, loading, error]);
+  }, [id, startDate, endDate]);
 
   if (loading) {
     return (
@@ -68,16 +64,104 @@ export function EngineerReport() {
   const ratingLevel = metrics.performanceScore >= 90 ? "Excellent" : metrics.performanceScore >= 80 ? "Satisfactory" : "Under Watch / Action Required";
   const ratingColor = metrics.performanceScore >= 90 ? "var(--color-resolved)" : metrics.performanceScore >= 80 ? "var(--primary)" : "var(--color-manual)";
 
+  const exportIndividualCSV = () => {
+    if (!data || !data.tickets) return;
+    const headers = [
+      "Ticket ID",
+      "Assigned Date",
+      "Application ID",
+      "Customer Name",
+      "Complaint Type",
+      "Priority",
+      "Initial Visit Date",
+      "Current Status",
+      "Service Report Date",
+      "TAT (Days)"
+    ];
+
+    const lines: string[] = [
+      `"Claro Energy O&M - Engineer Assignment Audit Report"`,
+      `"Engineer: ${engineer.name} (${engineer.state})"`,
+      `"Date Range: ${startDate || "All"} to ${endDate || "All"}"`,
+      `"Exported On: ${new Date().toLocaleString()}"`,
+      "",
+      headers.join(",")
+    ];
+
+    tickets.forEach((t: any) => {
+      const assignedStr = t.assignedAt ? new Date(t.assignedAt).toISOString().split("T")[0] : "";
+      const visitStr = t.initialVisitDate ? new Date(t.initialVisitDate).toISOString().split("T")[0] : "";
+      const serviceStr = t.serviceReportDate ? new Date(t.serviceReportDate).toISOString().split("T")[0] : "";
+
+      lines.push([
+        `"${t.ticketNumber}"`,
+        `"${assignedStr}"`,
+        `"${t.complaint?.applicationId || ""}"`,
+        `"${t.complaint?.complainantName || ""}"`,
+        `"${t.complaint?.complaintType || ""}"`,
+        `"${t.priority}"`,
+        `"${visitStr}"`,
+        `"${t.status}"`,
+        `"${serviceStr}"`,
+        t.tatDays !== null ? t.tatDays : ""
+      ].join(","));
+    });
+
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Engineer_Assignment_Log_${engineer.name.replace(/\s+/g, "_")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div style={styles.wrapper}>
       {/* Back & Print Controls (Hidden on Print) */}
       <div className="no-print" style={styles.controlsBar}>
-        <button onClick={() => navigate("/")} className="btn-secondary" style={styles.controlBtn}>
-          <ArrowLeft size={16} /> Back to Dashboard
-        </button>
-        <button onClick={() => window.print()} className="btn-primary" style={styles.controlBtn}>
-          <Printer size={16} /> Trigger Print Dialog
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <button onClick={() => navigate("/engineers/overview")} className="btn-secondary" style={styles.controlBtn}>
+            <ArrowLeft size={16} /> Engineers Overview
+          </button>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "#fff", padding: "0.3rem 0.6rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}>
+            <Calendar size={14} color="var(--primary)" />
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={(e) => {
+                const p = new URLSearchParams(searchParams);
+                if (e.target.value) p.set("startDate", e.target.value);
+                else p.delete("startDate");
+                setSearchParams(p);
+              }}
+              style={{ border: "none", fontSize: "0.78rem", color: "#1e293b" }}
+            />
+            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>to</span>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={(e) => {
+                const p = new URLSearchParams(searchParams);
+                if (e.target.value) p.set("endDate", e.target.value);
+                else p.delete("endDate");
+                setSearchParams(p);
+              }}
+              style={{ border: "none", fontSize: "0.78rem", color: "#1e293b" }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button onClick={exportIndividualCSV} className="btn-secondary" style={styles.controlBtn}>
+            Export CSV
+          </button>
+          <button onClick={() => window.print()} className="btn-primary" style={styles.controlBtn}>
+            <Printer size={16} /> Trigger Print Dialog
+          </button>
+        </div>
       </div>
 
       {/* Printable Sheet Area */}
@@ -85,45 +169,19 @@ export function EngineerReport() {
         {/* Report Header */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>
-            <div style={styles.logoContainer}>
-              <Compass size={24} color="var(--primary)" />
-              <span style={styles.logoText}>CLARO SOLAR</span>
+            <div className="claro-logo-badge" style={{ marginBottom: "0.5rem" }}>
+              <div className="claro-logo-top">
+                <span className="claro-logo-top-text">CLARO<sup>®</sup></span>
+              </div>
+              <div className="claro-logo-bottom">
+                <span className="claro-logo-bottom-text">ENERGY</span>
+              </div>
             </div>
-            <h1 style={styles.reportTitle}>Field Engineer Performance Audit Report</h1>
-            <p style={styles.reportSubtitle}>Official documentation for operational scorecard and assignments</p>
+            <h1 style={styles.reportTitle}>Engineer Ticket Assignment Audit Sheet</h1>
+            <p style={styles.reportSubtitle}>Chronological Workload Log & Operational Scorecard</p>
           </div>
-          <div style={styles.headerRight}>
-            <div style={styles.metaRow}>
-              <span style={styles.metaLabel}>Compiled:</span>
-              <span style={styles.metaVal}>{new Date().toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-            </div>
-            <div style={styles.metaRow}>
-              <span style={styles.metaLabel}>Audit ID:</span>
-              <span style={{ ...styles.metaVal, fontFamily: "monospace" }}>{engineer.id.substring(0, 8).toUpperCase()}-2026</span>
-            </div>
-          </div>
-        </div>
 
-        {/* Engineer Profile Bio Section */}
-        <div style={styles.section}>
-          <h2 style={styles.sectionHeader}>1. Engineer Profile Summary</h2>
-          <div style={styles.bioGrid}>
-            <div style={styles.bioCell}>
-              <span style={styles.bioLabel}>Full Legal Name:</span>
-              <span style={styles.bioVal}>{engineer.name}</span>
-            </div>
-            <div style={styles.bioCell}>
-              <span style={styles.bioLabel}>Email Address:</span>
-              <span style={styles.bioVal}>{engineer.email}</span>
-            </div>
-            <div style={styles.bioCell}>
-              <span style={styles.bioLabel}>Contact Phone:</span>
-              <span style={styles.bioVal}>{engineer.phone}</span>
-            </div>
-            <div style={styles.bioCell}>
-              <span style={styles.bioLabel}>Assigned State:</span>
-              <span style={styles.bioVal}>{engineer.state}</span>
-            </div>
+          <div style={styles.headerRight}>
             <div style={styles.bioCell}>
               <span style={styles.bioLabel}>Active District:</span>
               <span style={styles.bioVal}>{engineer.district}</span>

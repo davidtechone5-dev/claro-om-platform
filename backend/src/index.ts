@@ -116,6 +116,12 @@ app.get(
 );
 
 app.get(
+  "/api/v1/engineers/performance-summary",
+  authMiddleware.authenticateJWT,
+  ticketController.getAllEngineersPerformance
+);
+
+app.get(
   "/api/v1/engineers/:id/performance",
   authMiddleware.authenticateJWT,
   ticketController.getEngineerPerformance

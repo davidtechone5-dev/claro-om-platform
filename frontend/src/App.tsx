@@ -8,6 +8,7 @@ import { Warehouse } from "./pages/Warehouse";
 import { AMCTracker } from "./pages/AMCTracker";
 import { Login } from "./pages/Login";
 import { EngineerReport } from "./pages/EngineerReport";
+import { EngineersOverview } from "./pages/EngineersOverview";
 import { StateReport } from "./pages/StateReport";
 import { Menu } from "lucide-react";
 
@@ -96,6 +97,7 @@ function App() {
               element={isEngineer ? <Navigate to="/" replace /> : <Tickets />} 
             />
             <Route path="/tickets/:id" element={<TicketDetails />} />
+            <Route path="/engineers/overview" element={<EngineersOverview />} />
             <Route path="/engineers/:id/report" element={<EngineerReport />} />
             <Route path="/states/:stateName/report" element={<StateReport />} />
             <Route 

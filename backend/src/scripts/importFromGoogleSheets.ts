@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { prisma } from "../db.js";
 import { parseCSV } from "../utils/csv.js";
-import { parseSafeDate } from "../utils/date.js";
+import { parseSafeDate, parseMDYDate, parseDMYDate } from "../utils/date.js";
 import { normalizeStatus, normalizePriority, normalizeMaterialStatus } from "../utils/status.js";
 import { engineerService } from "../services/engineer.service.js";
 import { ticketService } from "../services/ticket.service.js";
@@ -199,9 +199,17 @@ async function run() {
       // 3. Upsert Engineer Profile
       let engineerDbId = "";
       if (engName && engEmail && engPhone) {
-        let engProfile = await prisma.engineer.findUnique({
-          where: { email: engEmail }
+        let engProfile = await prisma.engineer.findFirst({
+          where: {
+            name: { equals: engName.trim(), mode: "insensitive" }
+          }
         });
+
+        if (!engProfile) {
+          engProfile = await prisma.engineer.findUnique({
+            where: { email: engEmail }
+          });
+        }
 
         if (!engProfile) {
           const user = await prisma.user.upsert({
@@ -232,7 +240,7 @@ async function run() {
       }
 
       // 4. Create Complaint
-      const complaintDate = parseSafeDate(createdAtStr) || new Date();
+      const complaintDate = parseMDYDate(createdAtStr) || new Date();
       const complaint = await prisma.complaint.create({
         data: {
           applicationId: finalAppId,
@@ -263,7 +271,7 @@ async function run() {
 
       // 6. Create Ticket Assignment if Engineer exists
       if (engineerDbId) {
-        const assignDate = parseSafeDate(assignedAtStr) || complaintDate;
+        const assignDate = parseDMYDate(assignedAtStr) || complaintDate;
         await prisma.ticketAssignment.create({
           data: {
             ticketId: ticket.id,
@@ -276,7 +284,7 @@ async function run() {
 
       // 7. Create Initial Visit if date exists
       if (initialVisitDateStr && engineerDbId) {
-        const visitDate = parseSafeDate(initialVisitDateStr) || complaintDate;
+        const visitDate = parseDMYDate(initialVisitDateStr) || complaintDate;
         await prisma.initialVisit.create({
           data: {
             ticketId: ticket.id,
@@ -289,7 +297,7 @@ async function run() {
 
       // 8. Create Service Report if date exists
       if (serviceReportDateStr) {
-        const reportDate = parseSafeDate(serviceReportDateStr) || complaintDate;
+        const reportDate = parseDMYDate(serviceReportDateStr) || complaintDate;
         await prisma.serviceReport.create({
           data: {
             ticketId: ticket.id,

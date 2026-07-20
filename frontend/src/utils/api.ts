@@ -103,10 +103,30 @@ export const api = {
     return await res.json();
   },
 
-  async getEngineerPerformance(engineerId: string) {
-    const res = await fetch(`${API_BASE_URL}/engineers/${engineerId}/performance`, { headers: getHeaders() });
+  async getEngineerPerformance(engineerId: string, startDate?: string, endDate?: string) {
+    let url = `${API_BASE_URL}/engineers/${engineerId}/performance`;
+    const params = new URLSearchParams();
+    if (startDate) params.append("startDate", startDate);
+    if (endDate) params.append("endDate", endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+
+    const res = await fetch(url, { headers: getHeaders() });
     if (!res.ok) {
       throw new Error("Failed to fetch engineer performance metrics");
+    }
+    return await res.json();
+  },
+
+  async getAllEngineersPerformance(startDate?: string, endDate?: string) {
+    let url = `${API_BASE_URL}/engineers/performance-summary`;
+    const params = new URLSearchParams();
+    if (startDate) params.append("startDate", startDate);
+    if (endDate) params.append("endDate", endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+
+    const res = await fetch(url, { headers: getHeaders() });
+    if (!res.ok) {
+      throw new Error("Failed to fetch all engineers performance report");
     }
     return await res.json();
   },

@@ -31,6 +31,16 @@ export const ticketController = {
           complaint: {
             applicationId: { contains: searchStr, mode: "insensitive" }
           }
+        },
+        {
+          assignments: {
+            some: {
+              deletedAt: null,
+              engineer: {
+                name: { contains: searchStr, mode: "insensitive" }
+              }
+            }
+          }
         }
       ];
     }
@@ -232,11 +242,12 @@ export const ticketController = {
   },
 
   /**
-   * Get Engineer performance metrics
-   * GET /api/v1/engineers/:id/performance
+   * Get Engineer performance metrics with optional date range filters
+   * GET /api/v1/engineers/:id/performance?startDate=...&endDate=...
    */
   async getEngineerPerformance(req: AuthenticatedRequest, res: Response) {
     const { id } = req.params;
+    const { startDate, endDate } = req.query;
 
     // Safety check: Engineers can only view their own profile, Admins/Ops can view any
     if (req.user?.role === "Engineer" && req.user.engineerId !== id) {
@@ -253,41 +264,80 @@ export const ticketController = {
         return res.status(404).json({ detail: `Engineer ${id} not found.` });
       }
 
-      // Fetch all active assignments for this engineer
+      let startFilter: Date | null = null;
+      let endFilter: Date | null = null;
+      if (startDate) {
+        const p = startDate.toString().split("-").map(Number);
+        if (p.length === 3) startFilter = new Date(p[0], p[1] - 1, p[2], 0, 0, 0, 0);
+        else startFilter = new Date(startDate.toString());
+      }
+      if (endDate) {
+        const p = endDate.toString().split("-").map(Number);
+        if (p.length === 3) endFilter = new Date(p[0], p[1] - 1, p[2], 23, 59, 59, 999);
+        else endFilter = new Date(endDate.toString());
+      }
+
+      // Fetch assignments for this engineer
+      const assignmentWhere: any = { engineerId: id, deletedAt: null };
       const assignments = await prisma.ticketAssignment.findMany({
         where: { engineerId: id, deletedAt: null },
         include: {
           ticket: {
             include: {
-              complaint: {
-                include: {
-                  masterInstallation: {
-                    include: { state: true, district: true }
-                  }
-                }
-              }
+              complaint: true,
+              serviceReports: { where: { deletedAt: null }, orderBy: { reportDate: "desc" } },
+              initialVisits: { where: { deletedAt: null }, orderBy: { visitDate: "desc" } }
             }
           }
         }
       });
 
-      const tickets = assignments.map(a => a.ticket);
+      const allTickets = assignments.map(a => ({
+        ...a.ticket,
+        assignedAt: a.assignedAt || a.ticket.createdAt
+      }));
+
+      // Filter tickets assigned in date range if specified (anchored on assignedAt)
+      const tickets = allTickets.filter(t => {
+        if (!startFilter && !endFilter) return true;
+        const assignedTime = new Date(t.assignedAt).getTime();
+        if (startFilter && assignedTime < startFilter.getTime()) return false;
+        if (endFilter && assignedTime > endFilter.getTime()) return false;
+        return true;
+      });
+
       const totalTickets = tickets.length;
+      
+      // Filter resolved tickets
       const resolvedTickets = tickets.filter(t => t.status === "RESOLVED");
       const totalResolved = resolvedTickets.length;
       const activeTickets = totalTickets - totalResolved;
-      
       const resolutionRate = totalTickets > 0 ? Math.round((totalResolved / totalTickets) * 100) : 0;
 
-      // Calculate Average Turn-Around-Time (TAT) in days
+      // Count initial visits done by this engineer in the date range
+      const visitWhere: any = { engineerId: id, deletedAt: null };
+      if (startFilter || endFilter) {
+        visitWhere.visitDate = {};
+        if (startFilter) visitWhere.visitDate.gte = startFilter;
+        if (endFilter) visitWhere.visitDate.lte = endFilter;
+      }
+      const visitsDone = await prisma.initialVisit.count({ where: visitWhere });
+
+      // Calculate Average Turn-Around-Time (TAT) in days based on assignedAt -> serviceReportDate
       let tatSum = 0;
+      let validTatCount = 0;
       resolvedTickets.forEach(t => {
-        const created = new Date(t.createdAt).getTime();
-        const updated = new Date(t.updatedAt).getTime();
-        const diffDays = (updated - created) / (1000 * 60 * 60 * 24);
-        tatSum += diffDays > 0 ? diffDays : 1.0;
+        const assignTime = new Date(t.assignedAt).getTime();
+        const resTime = t.serviceReports?.[0]?.reportDate 
+          ? new Date(t.serviceReports[0].reportDate).getTime() 
+          : new Date(t.updatedAt).getTime();
+        const diffDays = (resTime - assignTime) / (1000 * 60 * 60 * 24);
+        if (diffDays >= 0) {
+          tatSum += diffDays;
+          validTatCount++;
+        }
       });
-      const avgTat = totalResolved > 0 ? parseFloat((tatSum / totalResolved).toFixed(1)) : 0;
+      const avgTat = validTatCount > 0 ? parseFloat((tatSum / validTatCount).toFixed(1)) : 0;
 
       // Group tickets by status
       const statusDistribution: Record<string, number> = {};
@@ -302,29 +352,34 @@ export const ticketController = {
         STANDARD: tickets.filter(t => t.priority === "STANDARD").length
       };
 
-      // SLA Breaches (created > 7 days ago and not resolved, or resolved taking > 7 days)
+      // SLA Breaches (> 7 days from assignedAt)
       const now = new Date();
       let slaBreachedCount = 0;
       tickets.forEach(t => {
-        const created = new Date(t.createdAt).getTime();
+        const assignedTime = new Date(t.assignedAt).getTime();
         if (t.status === "RESOLVED") {
-          const resolvedTime = new Date(t.updatedAt).getTime();
-          if ((resolvedTime - created) / (1000 * 60 * 60 * 24) > 7) {
+          const resTime = t.serviceReports?.[0]?.reportDate 
+            ? new Date(t.serviceReports[0].reportDate).getTime() 
+            : new Date(t.updatedAt).getTime();
+          if ((resTime - assignedTime) / (1000 * 60 * 60 * 24) > 7) {
             slaBreachedCount++;
           }
         } else {
-          if ((now.getTime() - created) / (1000 * 60 * 60 * 24) > 7) {
+          if ((now.getTime() - assignedTime) / (1000 * 60 * 60 * 24) > 7) {
             slaBreachedCount++;
           }
         }
       });
 
-      // Fetch material requests count for this engineer
-      const materialRequestsCount = await prisma.materialRequest.count({
-        where: { requestedBy: id, deletedAt: null }
-      });
+      // Material requests
+      const materialWhere: any = { requestedBy: id, deletedAt: null };
+      if (startFilter || endFilter) {
+        materialWhere.createdAt = {};
+        if (startFilter) materialWhere.createdAt.gte = startFilter;
+        if (endFilter) materialWhere.createdAt.lte = endFilter;
+      }
+      const materialRequestsCount = await prisma.materialRequest.count({ where: materialWhere });
 
-      // Calculate Performance Score (weighted score: 40% Volume, 30% Resolution Rate, 30% TAT/SLA)
       const volumeScore = Math.min(100, (totalTickets / 15) * 100);
       const slaScore = totalTickets > 0 ? Math.max(0, 100 - (slaBreachedCount / totalTickets) * 100) : 100;
       const scoreVal = Math.round((volumeScore * 0.4) + (resolutionRate * 0.3) + (slaScore * 0.3));
@@ -342,6 +397,8 @@ export const ticketController = {
         },
         metrics: {
           totalTickets,
+          totalAssigned: totalTickets,
+          visitsDone,
           totalResolved,
           activeTickets,
           resolutionRate,
@@ -354,21 +411,224 @@ export const ticketController = {
           status: statusDistribution,
           priority: priorityDistribution
         },
-        tickets: tickets.map(t => ({
-          id: t.id,
-          ticketNumber: t.ticketNumber,
-          status: t.status,
-          priority: t.priority,
-          createdAt: t.createdAt,
-          complaint: t.complaint ? {
-            applicationId: t.complaint.applicationId,
-            complaintType: t.complaint.complaintType,
-            complainantName: t.complaint.complainantName
-          } : null
-        }))
+        tickets: tickets.map(t => {
+          const assignTime = new Date(t.assignedAt).getTime();
+          const resTime = t.serviceReports?.[0]?.reportDate 
+            ? new Date(t.serviceReports[0].reportDate).getTime() 
+            : (t.status === "RESOLVED" ? new Date(t.updatedAt).getTime() : null);
+          const tatDays = resTime ? parseFloat(((resTime - assignTime) / (1000 * 60 * 60 * 24)).toFixed(1)) : null;
+
+          return {
+            id: t.id,
+            ticketNumber: t.ticketNumber,
+            status: t.status,
+            priority: t.priority,
+            assignedAt: t.assignedAt,
+            createdAt: t.createdAt,
+            initialVisitDate: t.initialVisits?.[0]?.visitDate || null,
+            serviceReportDate: t.serviceReports?.[0]?.reportDate || null,
+            tatDays,
+            complaint: t.complaint ? {
+              applicationId: t.complaint.applicationId,
+              complaintType: t.complaint.complaintType,
+              complainantName: t.complaint.complainantName
+            } : null
+          };
+        })
       });
     } catch (e: any) {
       console.error("Get engineer performance error:", e);
+      return res.status(500).json({ detail: e.message });
+    }
+  },
+
+  /**
+   * Get Performance Overview Report for ALL Engineers matching exact uploaded PDF sample report layout
+   * GET /api/v1/engineers/performance-summary?startDate=...&endDate=...
+   */
+  async getAllEngineersPerformance(req: AuthenticatedRequest, res: Response) {
+    const { startDate, endDate } = req.query;
+
+    try {
+      let startFilter: Date;
+      let endFilter: Date;
+
+      if (startDate) {
+        const p = startDate.toString().split("-").map(Number);
+        if (p.length === 3) startFilter = new Date(p[0], p[1] - 1, p[2], 0, 0, 0, 0);
+        else startFilter = new Date(startDate.toString());
+      } else {
+        startFilter = new Date(2026, 6, 1, 0, 0, 0, 0);
+      }
+
+      if (endDate) {
+        const p = endDate.toString().split("-").map(Number);
+        if (p.length === 3) endFilter = new Date(p[0], p[1] - 1, p[2], 23, 59, 59, 999);
+        else endFilter = new Date(endDate.toString());
+      } else {
+        endFilter = new Date(2026, 6, 15, 23, 59, 59, 999);
+      }
+
+      const beforeDate = new Date(startFilter);
+      beforeDate.setDate(beforeDate.getDate() - 27);
+      const beforeDateLabel = beforeDate.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+
+      const engineers = await prisma.engineer.findMany({
+        where: { isActive: true, deletedAt: null },
+        include: { state: true },
+        orderBy: { name: "asc" }
+      });
+
+      const helperStateCode = (stateName?: string | null) => {
+        if (!stateName) return "OTH";
+        const name = stateName.trim().toUpperCase();
+        if (name.includes("MAHARASHTRA") || name === "MH") return "MH";
+        if (name.includes("HARYANA") || name === "HR") return "HR";
+        if (name.includes("RAJASTHAN") || name === "RJ") return "RJ";
+        if (name.includes("MADHYA PRADESH") || name === "MP") return "MP";
+        if (name.includes("PUNJAB") || name === "PB") return "PB";
+        if (name.includes("GUJARAT") || name === "GJ") return "GJ";
+        if (name.includes("UTTAR PRADESH") || name === "UP") return "UP";
+        if (name.includes("KARNATAKA") || name === "KA") return "KA";
+        if (name.includes("BIHAR") || name === "BR") return "BR";
+        if (name.includes("ODISHA") || name === "OD") return "OD";
+        return name.length <= 3 ? name : name.substring(0, 2).toUpperCase();
+      };
+
+      const engineerReports = await Promise.all(
+        engineers.map(async (eng) => {
+          const assignments = await prisma.ticketAssignment.findMany({
+            where: { engineerId: eng.id, deletedAt: null },
+            include: {
+              ticket: {
+                include: { serviceReports: { where: { deletedAt: null }, orderBy: { reportDate: "desc" } } }
+              }
+            }
+          });
+
+          const getResolutionDate = (ticket: any): Date | null => {
+            if (ticket.status !== "RESOLVED") return null;
+            if (ticket.serviceReports?.[0]?.reportDate) return new Date(ticket.serviceReports[0].reportDate);
+            return ticket.updatedAt ? new Date(ticket.updatedAt) : null;
+          };
+
+          const getAssignmentDate = (a: any): Date => {
+            if (a.assignedAt) return new Date(a.assignedAt);
+            return a.ticket?.createdAt ? new Date(a.ticket.createdAt) : new Date();
+          };
+
+          const allTickets = assignments.map(a => ({
+            ...a.ticket,
+            assignedAt: getAssignmentDate(a),
+            resolutionDate: getResolutionDate(a.ticket)
+          }));
+
+          // Cumulative totals up to the selected end date
+          const totalAssigned = allTickets.filter(t => {
+            const time = new Date(t.assignedAt).getTime();
+            return time <= endFilter.getTime();
+          }).length;
+
+          const totalResolved = allTickets.filter(t => {
+            if (t.status !== "RESOLVED" || !t.resolutionDate) return false;
+            const resTime = new Date(t.resolutionDate).getTime();
+            return resTime <= endFilter.getTime();
+          }).length;
+
+          // Period specific totals (within startFilter and endFilter)
+          const assignedInWindow = allTickets.filter(t => {
+            const time = new Date(t.assignedAt).getTime();
+            return time >= startFilter.getTime() && time <= endFilter.getTime();
+          }).length;
+
+          const resolvedInWindow = allTickets.filter(t => {
+            if (t.status !== "RESOLVED" || !t.resolutionDate) return false;
+            const resTime = new Date(t.resolutionDate).getTime();
+            return resTime >= startFilter.getTime() && resTime <= endFilter.getTime();
+          }).length;
+
+          const assignedBeforeStart = allTickets.filter(t => {
+            const time = new Date(t.assignedAt).getTime();
+            return time < beforeDate.getTime();
+          }).length;
+
+          const resolvedBeforeStart = allTickets.filter(t => {
+            if (t.status !== "RESOLVED" || !t.resolutionDate) return false;
+            const assignTime = new Date(t.assignedAt).getTime();
+            return assignTime < beforeDate.getTime();
+          }).length;
+
+          return {
+            id: eng.id,
+            name: eng.name,
+            stateCode: helperStateCode(eng.state?.name),
+            totalAssigned,
+            totalResolved,
+            assignedInWindow,
+            resolvedInWindow,
+            assignedBeforeStart,
+            resolvedBeforeStart
+          };
+        })
+      );
+
+      engineerReports.sort((a, b) => b.totalAssigned - a.totalAssigned);
+
+      const allActiveAssignedTickets = await prisma.ticket.count({
+        where: {
+          deletedAt: null,
+          createdAt: { lte: endFilter }
+        }
+      });
+      const allResolvedTickets = await prisma.ticket.count({
+        where: {
+          deletedAt: null,
+          status: "RESOLVED",
+          updatedAt: { lte: endFilter }
+        }
+      });
+
+      const totals = {
+        totalAssigned: engineerReports.reduce((acc, e) => acc + e.totalAssigned, 0),
+        totalResolved: engineerReports.reduce((acc, e) => acc + e.totalResolved, 0),
+        assignedInWindow: engineerReports.reduce((acc, e) => acc + e.assignedInWindow, 0),
+        resolvedInWindow: engineerReports.reduce((acc, e) => acc + e.resolvedInWindow, 0),
+        assignedBeforeStart: engineerReports.reduce((acc, e) => acc + e.assignedBeforeStart, 0),
+        resolvedBeforeStart: engineerReports.reduce((acc, e) => acc + e.resolvedBeforeStart, 0)
+      };
+
+      const summaryCards = {
+        activeEngineers: engineerReports.length,
+        totalAssigned: totals.totalAssigned,
+        totalResolved: totals.totalResolved,
+        assignedWindow: totals.assignedInWindow,
+        resolvedWindow: totals.resolvedInWindow,
+        assignedByTickets: allActiveAssignedTickets,
+        resolvedByTickets: allResolvedTickets
+      };
+
+      const formatDateStr = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const reportingWindowLabel = `${formatDateStr(startFilter)} – ${formatDateStr(endFilter)}, ${endFilter.getFullYear()}`;
+      const windowDatesLabel = `${formatDateStr(startFilter)} – ${formatDateStr(endFilter)}`;
+      const beforeDateLabelStr = `${formatDateStr(startFilter)}`;
+
+      return res.status(200).json({
+        reportTitle: "CLARO ENERGY",
+        subTitle: "O&M Dashboard · Engineer Performance",
+        sourceText: "Source: Tickets Generation sheet (live export)",
+        reportingWindowLabel,
+        beforeDateLabel: beforeDateLabelStr,
+        windowDaysLabel: windowDatesLabel,
+        period: {
+          startDate: startFilter.toISOString().split("T")[0],
+          endDate: endFilter.toISOString().split("T")[0]
+        },
+        summaryCards,
+        engineers: engineerReports,
+        totals
+      });
+    } catch (e: any) {
+      console.error("Get all engineers PDF replica report error:", e);
       return res.status(500).json({ detail: e.message });
     }
   },
