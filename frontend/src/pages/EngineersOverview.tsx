@@ -7,7 +7,8 @@ import {
   Printer, 
   Search, 
   FileText,
-  AlertCircle
+  AlertCircle,
+  MapPin
 } from "lucide-react";
 
 export function EngineersOverview() {
@@ -16,9 +17,10 @@ export function EngineersOverview() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedState, setSelectedState] = useState<string>("ALL");
 
-  const [startDate, setStartDate] = useState<string>("2026-07-01");
-  const [endDate, setEndDate] = useState<string>("2026-07-15");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   const fetchReport = async () => {
     setLoading(true);
@@ -37,75 +39,116 @@ export function EngineersOverview() {
     fetchReport();
   }, [startDate, endDate]);
 
-  const exportCSV = () => {
+  const exportCSV = (stateFilterOnly = false) => {
     if (!data || !data.engineers) return;
+
+    let targetEngineers = data.engineers;
+    if (stateFilterOnly && selectedState !== "ALL") {
+      targetEngineers = targetEngineers.filter((eng: any) => 
+        eng.stateCode === selectedState || eng.stateName?.toUpperCase().includes(selectedState.toUpperCase())
+      );
+    }
 
     const headers = [
       "Engineer Name",
       "State",
-      "Total Assigned (Till Now)",
-      "Total Resolved (Till Now)",
-      `Assigned in (${data.windowDaysLabel || "Selected Window"})`,
-      `Resolved in (${data.windowDaysLabel || "Selected Window"})`
+      "All Tickets",
+      "Assigned",
+      "Visited",
+      "Material Req",
+      "Insurance",
+      "Resolved",
+      "Manual Assign"
     ];
 
     const lines: string[] = [
       `"${data.reportTitle || "CLARO ENERGY"} - ${data.subTitle || "O&M Dashboard · Engineer Performance"}"`,
-      `"Reporting Window: ${data.reportingWindowLabel || ""}"`,
-      `"${data.sourceText || ""}"`,
+      `"Reporting Window: ${startDate || "All"} to ${endDate || "All"}"`,
+      `"Filter State: ${selectedState}"`,
       "",
       headers.join(",")
     ];
 
-    data.engineers.forEach((eng: any) => {
+    targetEngineers.forEach((eng: any) => {
       lines.push([
         `"${eng.name}"`,
         `"${eng.stateCode}"`,
-        eng.totalAssigned,
-        eng.totalResolved,
-        eng.assignedInWindow,
-        eng.resolvedInWindow
+        eng.allCount || 0,
+        eng.assignedCount || 0,
+        eng.visitedCount || 0,
+        eng.materialReqCount || 0,
+        eng.insuranceCount || 0,
+        eng.resolvedCount || 0,
+        eng.manualAssignCount || 0
       ].join(","));
     });
 
-    if (data.totals) {
-      lines.push("");
-      lines.push([
-        `"Total"`,
-        `""`,
-        data.totals.totalAssigned,
-        data.totals.totalResolved,
-        data.totals.assignedInWindow,
-        data.totals.resolvedInWindow
-      ].join(","));
-    }
+    const totalsRow = {
+      allCount: targetEngineers.reduce((acc: number, e: any) => acc + (e.allCount || 0), 0),
+      assignedCount: targetEngineers.reduce((acc: number, e: any) => acc + (e.assignedCount || 0), 0),
+      visitedCount: targetEngineers.reduce((acc: number, e: any) => acc + (e.visitedCount || 0), 0),
+      materialReqCount: targetEngineers.reduce((acc: number, e: any) => acc + (e.materialReqCount || 0), 0),
+      insuranceCount: targetEngineers.reduce((acc: number, e: any) => acc + (e.insuranceCount || 0), 0),
+      resolvedCount: targetEngineers.reduce((acc: number, e: any) => acc + (e.resolvedCount || 0), 0),
+      manualAssignCount: targetEngineers.reduce((acc: number, e: any) => acc + (e.manualAssignCount || 0), 0)
+    };
+
+    lines.push("");
+    lines.push([
+      `"Total"`,
+      `""`,
+      totalsRow.allCount,
+      totalsRow.assignedCount,
+      totalsRow.visitedCount,
+      totalsRow.materialReqCount,
+      totalsRow.insuranceCount,
+      totalsRow.resolvedCount,
+      totalsRow.manualAssignCount
+    ].join(","));
 
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `Claro_Engineer_Performance_${startDate}_to_${endDate}.csv`);
+    const fileNameSuffix = stateFilterOnly && selectedState !== "ALL" ? `_${selectedState}` : "_All";
+    link.setAttribute("download", `Claro_Engineer_Report${fileNameSuffix}_${startDate}_to_${endDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const filteredEngineers = data?.engineers ? data.engineers.filter((eng: any) => 
-    !searchQuery.trim() || eng.name.toLowerCase().includes(searchQuery.toLowerCase()) || eng.stateCode.toLowerCase().includes(searchQuery.toLowerCase())
-  ) : [];
+  const statesList = data?.engineers 
+    ? Array.from(new Set(data.engineers.map((e: any) => e.stateCode))).filter(Boolean)
+    : ["MH", "HR", "MP", "RJ"];
 
-  const maxAssigned = data?.engineers ? Math.max(...data.engineers.map((e: any) => e.totalAssigned), 1) : 100;
-  const maxResolved = data?.engineers ? Math.max(...data.engineers.map((e: any) => e.totalResolved), 1) : 100;
+  const filteredEngineers = data?.engineers ? data.engineers.filter((eng: any) => {
+    const searchMatch = !searchQuery.trim() || 
+      eng.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      eng.stateCode.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const stateMatch = selectedState === "ALL" || eng.stateCode === selectedState;
+    return searchMatch && stateMatch;
+  }) : [];
+
+  const totalsFiltered = {
+    allCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.allCount || 0), 0),
+    assignedCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.assignedCount || 0), 0),
+    visitedCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.visitedCount || 0), 0),
+    materialReqCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.materialReqCount || 0), 0),
+    insuranceCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.insuranceCount || 0), 0),
+    resolvedCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.resolvedCount || 0), 0),
+    manualAssignCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.manualAssignCount || 0), 0)
+  };
 
   return (
     <div style={styles.pageContainer} className="animate-fade-in print-sheet">
-      {/* Date Filter & Export Control Bar (Hidden on Print) */}
+      {/* Date & State Filter & Export Control Bar (Hidden on Print) */}
       <div style={styles.controlBar} className="no-print">
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <Calendar size={16} color="var(--primary)" />
-          <span style={{ fontWeight: "700", fontSize: "0.85rem", color: "#334155" }}>Select Date Range:</span>
-          
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          {/* Date Range Picker */}
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <Calendar size={16} color="var(--primary)" />
+            <span style={{ fontWeight: "700", fontSize: "0.85rem", color: "#334155" }}>Date Range:</span>
             <input 
               type="date" 
               value={startDate}
@@ -122,60 +165,56 @@ export function EngineersOverview() {
               style={styles.dateInput}
             />
           </div>
+
+          {/* State Filter Dropdown */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <MapPin size={16} color="var(--primary)" />
+            <span style={{ fontWeight: "700", fontSize: "0.85rem", color: "#334155" }}>State:</span>
+            <select
+              value={selectedState}
+              onChange={(e) => setSelectedState(e.target.value)}
+              className="form-input"
+              style={{ padding: "0.3rem 0.6rem", fontSize: "0.82rem", fontWeight: "600" }}
+            >
+              <option value="ALL">All States ({data?.engineers?.length || 0} Engineers)</option>
+              {statesList.map((st: any) => (
+                <option key={st} value={st}>{st}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button onClick={exportCSV} className="btn-secondary" style={styles.actionBtn}>
-            <Download size={15} /> Export CSV
+          <button onClick={() => exportCSV(false)} className="btn-secondary" style={styles.actionBtn}>
+            <Download size={15} /> Export All CSV
           </button>
+          {selectedState !== "ALL" && (
+            <button onClick={() => exportCSV(true)} className="btn-secondary" style={styles.actionBtn}>
+              <Download size={15} /> Export {selectedState} CSV
+            </button>
+          )}
           <button onClick={() => window.print()} className="btn-primary" style={styles.actionBtn}>
-            <Printer size={15} /> Trigger Print / Save PDF
+            <Printer size={15} /> Print / Save PDF
           </button>
         </div>
       </div>
 
-      {/* Main Report Header matching Sample PDF */}
+      {/* Main Report Header */}
       <div style={styles.headerBlock}>
         <div>
           <h1 style={styles.companyTitle}>CLARO ENERGY</h1>
-          <p style={styles.subTitle}>O&M Dashboard · Engineer Performance</p>
+          <p style={styles.subTitle}>O&M Dashboard · Engineer Performance Reports</p>
         </div>
 
         <div style={{ textAlign: "right" }}>
           <div style={styles.redWindowBadge}>
-            Reporting Window: {data?.reportingWindowLabel || "Jul 1 – Jul 15, 2026"}
+            Reporting Window: {startDate || "All"} – {endDate || "All"}
           </div>
           <p style={styles.sourceText}>
-            {data?.sourceText || "Source: Tickets Generation sheet (live export)"}
+            Source: Tickets Registry live database export
           </p>
         </div>
       </div>
-
-      {/* Top Summary KPI Cards Bar */}
-      {data?.summaryCards && (
-        <div style={{ ...styles.kpiContainer, gridTemplateColumns: "repeat(5, 1fr)" }}>
-          <div style={styles.kpiBox}>
-            <span style={styles.kpiLabel}>ACTIVE ENGINEERS</span>
-            <span style={{ ...styles.kpiVal, color: "#0f172a" }}>{data.summaryCards.activeEngineers}</span>
-          </div>
-          <div style={styles.kpiBox}>
-            <span style={styles.kpiLabel}>TOTAL ASSIGNED (Till Now)</span>
-            <span style={{ ...styles.kpiVal, color: "#0f172a" }}>{data.summaryCards.totalAssigned}</span>
-          </div>
-          <div style={styles.kpiBox}>
-            <span style={styles.kpiLabel}>TOTAL RESOLVED (Till Now)</span>
-            <span style={{ ...styles.kpiVal, color: "#2e7d32" }}>{data.summaryCards.totalResolved}</span>
-          </div>
-          <div style={styles.kpiBox}>
-            <span style={styles.kpiLabel}>ASSIGNED ({data?.windowDaysLabel || "WINDOW"})</span>
-            <span style={{ ...styles.kpiVal, color: "#b91c1c" }}>{data.summaryCards.assignedWindow}</span>
-          </div>
-          <div style={styles.kpiBox}>
-            <span style={styles.kpiLabel}>RESOLVED ({data?.windowDaysLabel || "WINDOW"})</span>
-            <span style={{ ...styles.kpiVal, color: "#d97706" }}>{data.summaryCards.resolvedWindow}</span>
-          </div>
-        </div>
-      )}
 
       {/* Loading State */}
       {loading && (
@@ -198,7 +237,7 @@ export function EngineersOverview() {
         </div>
       )}
 
-      {/* Main Table View */}
+      {/* Main 8-Column Table View */}
       {!loading && !error && data && data.engineers && (
         <>
           {/* Search Input Bar (Hidden on Print) */}
@@ -207,7 +246,7 @@ export function EngineersOverview() {
               <Search size={15} color="#64748b" style={styles.searchIcon} />
               <input 
                 type="text" 
-                placeholder="Filter by engineer name or state code..."
+                placeholder="Search engineer by name or state..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="form-input"
@@ -221,22 +260,18 @@ export function EngineersOverview() {
             <table style={styles.table}>
               <thead>
                 <tr style={styles.darkRedHeaderTr}>
-                  <th style={{ ...styles.th, textAlign: "left", width: "240px" }}>Engineer Name</th>
-                  <th style={{ ...styles.th, textAlign: "center", width: "80px" }}>State</th>
-                  <th style={{ ...styles.th, textAlign: "center", width: "160px" }}>Total Assigned<br/><span style={{ fontSize: "0.65rem", fontWeight: "400" }}>(Till Now)</span></th>
-                  <th style={{ ...styles.th, textAlign: "center", width: "160px" }}>Total Resolved<br/><span style={{ fontSize: "0.65rem", fontWeight: "400" }}>(Till Now)</span></th>
-                  <th style={{ ...styles.th, textAlign: "center", width: "180px" }}>Assigned in<br/><span style={{ fontSize: "0.65rem", fontWeight: "400" }}>({data.windowDaysLabel || "Selected Window"})</span></th>
-                  <th style={{ ...styles.th, textAlign: "center", width: "180px" }}>Resolved in<br/><span style={{ fontSize: "0.65rem", fontWeight: "400" }}>({data.windowDaysLabel || "Selected Window"})</span></th>
+                  <th style={{ ...styles.th, textAlign: "left" }}>Engineer</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>All Tickets</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>Assigned</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>Visited</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>Material Req</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>Insurance</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>Resolved</th>
+                  <th style={{ ...styles.th, textAlign: "center" }}>Manual Assign</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredEngineers.map((eng: any, idx: number) => {
-                  const assignedPct = Math.round((eng.totalAssigned / maxAssigned) * 100);
-                  const resolvedPct = Math.round((eng.totalResolved / maxResolved) * 100);
-
-                  const assignedBg = `linear-gradient(90deg, #fecaca 0%, #fecaca ${assignedPct}%, transparent ${assignedPct}%)`;
-                  const resolvedBg = `linear-gradient(90deg, #bbf7d0 0%, #bbf7d0 ${resolvedPct}%, transparent ${resolvedPct}%)`;
-
                   return (
                     <tr 
                       key={eng.id} 
@@ -245,51 +280,71 @@ export function EngineersOverview() {
                         backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f8fafc"
                       }}
                     >
+                      {/* 1. Engineer Name & State */}
                       <td style={{ ...styles.td, fontWeight: "700", color: "#0f172a" }}>
                         <span 
-                          onClick={() => navigate(`/engineers/${eng.id}/report`)}
-                          style={{ cursor: "pointer", textDecoration: "none" }}
-                          title="View Individual Audit Sheet"
+                          onClick={() => navigate(`/engineers/${eng.id}/report?startDate=${startDate}&endDate=${endDate}`)}
+                          style={{ cursor: "pointer", color: "#2563eb", textDecoration: "underline" }}
+                          title="Click to view detailed scorecard audit report"
                         >
                           {eng.name}
                         </span>
-                      </td>
-                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "600" }}>{eng.stateCode}</td>
-                      
-                      {/* Total Assigned with Inline Red Progress Bar Fill */}
-                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "700", background: assignedBg }}>
-                        {eng.totalAssigned}
+                        <span style={{ fontSize: "0.75rem", color: "#64748b", marginLeft: "0.5rem" }}>
+                          ({eng.stateCode})
+                        </span>
                       </td>
 
-                      {/* Total Resolved with Inline Green Progress Bar Fill */}
-                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "700", background: resolvedBg }}>
-                        {eng.totalResolved}
+                      {/* 2. All Tickets */}
+                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "800", color: "#0f172a" }}>
+                        {eng.allCount || 0}
                       </td>
 
-                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "600", color: "#b91c1c" }}>{eng.assignedInWindow}</td>
-                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "600", color: "#d97706" }}>{eng.resolvedInWindow}</td>
+                      {/* 3. Assigned */}
+                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "600", color: "#2563eb" }}>
+                        {eng.assignedCount || 0}
+                      </td>
+
+                      {/* 4. Visited */}
+                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "600", color: "#0891b2" }}>
+                        {eng.visitedCount || 0}
+                      </td>
+
+                      {/* 5. Material Req */}
+                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "600", color: "#d97706" }}>
+                        {eng.materialReqCount || 0}
+                      </td>
+
+                      {/* 6. Insurance */}
+                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "600", color: "#9333ea" }}>
+                        {eng.insuranceCount || 0}
+                      </td>
+
+                      {/* 7. Resolved */}
+                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "700", color: "#16a34a" }}>
+                        {eng.resolvedCount || 0}
+                      </td>
+
+                      {/* 8. Manual Assign */}
+                      <td style={{ ...styles.td, textAlign: "center", fontWeight: "600", color: "#dc2626" }}>
+                        {eng.manualAssignCount || 0}
+                      </td>
                     </tr>
                   );
                 })}
 
-                {/* Dark Red Summary Row */}
-                {data.totals && (
-                  <tr style={styles.darkRedTotalTr}>
-                    <td style={{ ...styles.totalTd, textAlign: "left" }}>Total</td>
-                    <td style={{ ...styles.totalTd, textAlign: "center" }}></td>
-                    <td style={{ ...styles.totalTd, textAlign: "center" }}>{data.totals.totalAssigned}</td>
-                    <td style={{ ...styles.totalTd, textAlign: "center" }}>{data.totals.totalResolved}</td>
-                    <td style={{ ...styles.totalTd, textAlign: "center" }}>{data.totals.assignedInWindow}</td>
-                    <td style={{ ...styles.totalTd, textAlign: "center" }}>{data.totals.resolvedInWindow}</td>
-                  </tr>
-                )}
+                {/* Summary Totals Row */}
+                <tr style={styles.darkRedTotalTr}>
+                  <td style={{ ...styles.totalTd, textAlign: "left" }}>Total ({filteredEngineers.length} Engineers)</td>
+                  <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.allCount}</td>
+                  <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.assignedCount}</td>
+                  <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.visitedCount}</td>
+                  <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.materialReqCount}</td>
+                  <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.insuranceCount}</td>
+                  <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.resolvedCount}</td>
+                  <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.manualAssignCount}</td>
+                </tr>
               </tbody>
             </table>
-          </div>
-
-          {/* Footer Note */}
-          <div style={styles.footerNote}>
-            Total Assigned / Total Resolved reflect all-time activity in the Tickets Registry. Date range metrics reflect tickets assigned (`assignedAt`) or resolved (`serviceReportDate`) strictly within {data.reportingWindowLabel || "the selected window"}.
           </div>
         </>
       )}

@@ -287,7 +287,6 @@ export function EngineerReport() {
             <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }} className="no-print">
               {[
                 { key: "ALL", label: "All", count: tickets.length },
-                { key: "RECEIVED", label: "Received", count: tickets.filter((t: any) => t.status === "RECEIVED").length },
                 { key: "ASSIGNED", label: "Assigned", count: tickets.filter((t: any) => t.status === "ASSIGNED").length },
                 { key: "INITIAL_VISIT_COMPLETED", label: "Visited", count: tickets.filter((t: any) => t.status === "INITIAL_VISIT_COMPLETED").length },
                 { key: "MATERIAL_REQUESTED", label: "Material Req", count: tickets.filter((t: any) => t.status === "MATERIAL_REQUESTED").length },

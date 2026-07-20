@@ -566,45 +566,49 @@ export const ticketController = {
             resolutionDate: getResolutionDate(a.ticket)
           }));
 
-          // All-time lifetime cumulative metrics (matching Master Sheet)
+          // All-time / Lifetime cumulative metrics
           const totalAssigned = allTickets.length;
           const totalResolved = allTickets.filter(t => t.status === "RESOLVED").length;
 
-          // Period specific totals requiring explicit assignment date (within startFilter and endFilter)
-          const assignedInWindow = allTickets.filter(t => {
-            if (!t.assignedAt) return false;
-            const time = new Date(t.assignedAt).getTime();
+          // Date window filtered tickets
+          const windowTickets = allTickets.filter(t => {
+            const time = t.assignedAt ? new Date(t.assignedAt).getTime() : (t.createdAt ? new Date(t.createdAt).getTime() : 0);
             return time >= startFilter.getTime() && time <= endFilter.getTime();
-          }).length;
+          });
 
-          const resolvedInWindow = allTickets.filter(t => {
-            if (t.status !== "RESOLVED" || !t.resolutionDate) return false;
-            const resTime = new Date(t.resolutionDate).getTime();
-            return resTime >= startFilter.getTime() && resTime <= endFilter.getTime();
-          }).length;
+          // If date range is default (all-time view), use allTickets, otherwise use windowTickets
+          const targetTickets = (startDate || endDate) ? windowTickets : allTickets;
 
-          const assignedBeforeStart = allTickets.filter(t => {
-            if (!t.assignedAt) return false;
-            const time = new Date(t.assignedAt).getTime();
-            return time < beforeDate.getTime();
-          }).length;
+          const allCount = targetTickets.length;
+          const receivedCount = targetTickets.filter(t => t.status === "RECEIVED").length;
+          const assignedCount = targetTickets.filter(t => t.status === "ASSIGNED").length;
+          const visitedCount = targetTickets.filter(t => t.status === "INITIAL_VISIT_COMPLETED").length;
+          const materialReqCount = targetTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
+          const insuranceCount = targetTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
+          const resolvedCount = targetTickets.filter(t => t.status === "RESOLVED").length;
+          const manualAssignCount = targetTickets.filter(t => t.status === "MANUAL_ASSIGNMENT_REQUIRED").length;
 
-          const resolvedBeforeStart = allTickets.filter(t => {
-            if (t.status !== "RESOLVED" || !t.resolutionDate || !t.assignedAt) return false;
-            const assignTime = new Date(t.assignedAt).getTime();
-            return assignTime < beforeDate.getTime();
-          }).length;
+          // Legacy metrics for compatibility
+          const assignedInWindow = windowTickets.length;
+          const resolvedInWindow = windowTickets.filter(t => t.status === "RESOLVED").length;
 
           return {
             id: eng.id,
             name: eng.name,
             stateCode: helperStateCode(eng.state?.name),
+            stateName: eng.state?.name || "Maharashtra",
+            allCount,
+            receivedCount,
+            assignedCount,
+            visitedCount,
+            materialReqCount,
+            insuranceCount,
+            resolvedCount,
+            manualAssignCount,
             totalAssigned,
             totalResolved,
             assignedInWindow,
-            resolvedInWindow,
-            assignedBeforeStart,
-            resolvedBeforeStart
+            resolvedInWindow
           };
         })
       );
@@ -618,49 +622,47 @@ export const ticketController = {
           deduplicatedMap.set(normKey, { ...item });
         } else {
           const existing = deduplicatedMap.get(normKey)!;
+          existing.allCount += item.allCount;
+          existing.receivedCount += item.receivedCount;
+          existing.assignedCount += item.assignedCount;
+          existing.visitedCount += item.visitedCount;
+          existing.materialReqCount += item.materialReqCount;
+          existing.insuranceCount += item.insuranceCount;
+          existing.resolvedCount += item.resolvedCount;
+          existing.manualAssignCount += item.manualAssignCount;
           existing.totalAssigned += item.totalAssigned;
           existing.totalResolved += item.totalResolved;
           existing.assignedInWindow += item.assignedInWindow;
           existing.resolvedInWindow += item.resolvedInWindow;
-          existing.assignedBeforeStart += item.assignedBeforeStart;
-          existing.resolvedBeforeStart += item.resolvedBeforeStart;
         }
       });
 
       const finalEngineerReports = Array.from(deduplicatedMap.values());
-      finalEngineerReports.sort((a, b) => b.totalAssigned - a.totalAssigned);
-
-      const allActiveAssignedTickets = await prisma.ticket.count({
-        where: {
-          deletedAt: null,
-          createdAt: { lte: endFilter }
-        }
-      });
-      const allResolvedTickets = await prisma.ticket.count({
-        where: {
-          deletedAt: null,
-          status: "RESOLVED",
-          updatedAt: { lte: endFilter }
-        }
-      });
+      finalEngineerReports.sort((a, b) => b.allCount - a.allCount);
 
       const totals = {
+        allCount: finalEngineerReports.reduce((acc, e) => acc + e.allCount, 0),
+        receivedCount: finalEngineerReports.reduce((acc, e) => acc + e.receivedCount, 0),
+        assignedCount: finalEngineerReports.reduce((acc, e) => acc + e.assignedCount, 0),
+        visitedCount: finalEngineerReports.reduce((acc, e) => acc + e.visitedCount, 0),
+        materialReqCount: finalEngineerReports.reduce((acc, e) => acc + e.materialReqCount, 0),
+        insuranceCount: finalEngineerReports.reduce((acc, e) => acc + e.insuranceCount, 0),
+        resolvedCount: finalEngineerReports.reduce((acc, e) => acc + e.resolvedCount, 0),
+        manualAssignCount: finalEngineerReports.reduce((acc, e) => acc + e.manualAssignCount, 0),
         totalAssigned: finalEngineerReports.reduce((acc, e) => acc + e.totalAssigned, 0),
         totalResolved: finalEngineerReports.reduce((acc, e) => acc + e.totalResolved, 0),
         assignedInWindow: finalEngineerReports.reduce((acc, e) => acc + e.assignedInWindow, 0),
-        resolvedInWindow: finalEngineerReports.reduce((acc, e) => acc + e.resolvedInWindow, 0),
-        assignedBeforeStart: finalEngineerReports.reduce((acc, e) => acc + e.assignedBeforeStart, 0),
-        resolvedBeforeStart: finalEngineerReports.reduce((acc, e) => acc + e.resolvedBeforeStart, 0)
+        resolvedInWindow: finalEngineerReports.reduce((acc, e) => acc + e.resolvedInWindow, 0)
       };
 
       const summaryCards = {
         activeEngineers: finalEngineerReports.length,
-        totalAssigned: totals.totalAssigned,
-        totalResolved: totals.totalResolved,
-        assignedWindow: totals.assignedInWindow,
-        resolvedWindow: totals.resolvedInWindow,
-        assignedByTickets: allActiveAssignedTickets,
-        resolvedByTickets: allResolvedTickets
+        totalAssigned: totals.allCount,
+        totalResolved: totals.resolvedCount,
+        assignedWindow: totals.allCount,
+        resolvedWindow: totals.resolvedCount,
+        assignedByTickets: totals.allCount,
+        resolvedByTickets: totals.resolvedCount
       };
 
       const formatDateStr = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
