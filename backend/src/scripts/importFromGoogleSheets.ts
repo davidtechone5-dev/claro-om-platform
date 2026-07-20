@@ -271,7 +271,7 @@ async function run() {
 
       // 6. Create Ticket Assignment if Engineer exists
       if (engineerDbId) {
-        const assignDate = parseDMYDate(assignedAtStr) || complaintDate;
+        const assignDate = parseDMYDate(assignedAtStr) || undefined;
         await prisma.ticketAssignment.create({
           data: {
             ticketId: ticket.id,

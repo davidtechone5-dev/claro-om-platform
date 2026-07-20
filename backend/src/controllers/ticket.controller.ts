@@ -512,9 +512,9 @@ export const ticketController = {
             return ticket.updatedAt ? new Date(ticket.updatedAt) : null;
           };
 
-          const getAssignmentDate = (a: any): Date => {
+          const getAssignmentDate = (a: any): Date | null => {
             if (a.assignedAt) return new Date(a.assignedAt);
-            return a.ticket?.createdAt ? new Date(a.ticket.createdAt) : new Date();
+            return null;
           };
 
           const allTickets = assignments.map(a => ({
@@ -523,20 +523,13 @@ export const ticketController = {
             resolutionDate: getResolutionDate(a.ticket)
           }));
 
-          // Cumulative totals up to the selected end date
-          const totalAssigned = allTickets.filter(t => {
-            const time = new Date(t.assignedAt).getTime();
-            return time <= endFilter.getTime();
-          }).length;
+          // All-time lifetime cumulative metrics (matching Master Sheet)
+          const totalAssigned = allTickets.length;
+          const totalResolved = allTickets.filter(t => t.status === "RESOLVED").length;
 
-          const totalResolved = allTickets.filter(t => {
-            if (t.status !== "RESOLVED" || !t.resolutionDate) return false;
-            const resTime = new Date(t.resolutionDate).getTime();
-            return resTime <= endFilter.getTime();
-          }).length;
-
-          // Period specific totals (within startFilter and endFilter)
+          // Period specific totals requiring explicit assignment date (within startFilter and endFilter)
           const assignedInWindow = allTickets.filter(t => {
+            if (!t.assignedAt) return false;
             const time = new Date(t.assignedAt).getTime();
             return time >= startFilter.getTime() && time <= endFilter.getTime();
           }).length;
@@ -548,12 +541,13 @@ export const ticketController = {
           }).length;
 
           const assignedBeforeStart = allTickets.filter(t => {
+            if (!t.assignedAt) return false;
             const time = new Date(t.assignedAt).getTime();
             return time < beforeDate.getTime();
           }).length;
 
           const resolvedBeforeStart = allTickets.filter(t => {
-            if (t.status !== "RESOLVED" || !t.resolutionDate) return false;
+            if (t.status !== "RESOLVED" || !t.resolutionDate || !t.assignedAt) return false;
             const assignTime = new Date(t.assignedAt).getTime();
             return assignTime < beforeDate.getTime();
           }).length;
