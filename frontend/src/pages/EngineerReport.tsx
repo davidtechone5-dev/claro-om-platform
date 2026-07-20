@@ -20,6 +20,7 @@ export function EngineerReport() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedStatusTab, setSelectedStatusTab] = useState<string>("ALL");
 
   useEffect(() => {
     async function loadReportData() {
@@ -279,7 +280,42 @@ export function EngineerReport() {
 
         {/* Assigned Tickets Registry Table */}
         <div style={styles.section} className="page-break">
-          <h2 style={styles.sectionHeader}>3. Ticket Registry Checklist & Actions</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
+            <h2 style={{ ...styles.sectionHeader, margin: 0 }}>3. Ticket Registry Checklist & Actions</h2>
+
+            {/* Interactive Status Filter Tabs (Hidden on Print) */}
+            <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }} className="no-print">
+              {[
+                { key: "ALL", label: "All", count: tickets.length },
+                { key: "RECEIVED", label: "Received", count: tickets.filter((t: any) => t.status === "RECEIVED").length },
+                { key: "ASSIGNED", label: "Assigned", count: tickets.filter((t: any) => t.status === "ASSIGNED").length },
+                { key: "INITIAL_VISIT_COMPLETED", label: "Visited", count: tickets.filter((t: any) => t.status === "INITIAL_VISIT_COMPLETED").length },
+                { key: "MATERIAL_REQUESTED", label: "Material Req", count: tickets.filter((t: any) => t.status === "MATERIAL_REQUESTED").length },
+                { key: "INSURANCE_SUBMITTED", label: "Insurance", count: tickets.filter((t: any) => t.status === "INSURANCE_SUBMITTED").length },
+                { key: "RESOLVED", label: "Resolved", count: tickets.filter((t: any) => t.status === "RESOLVED").length },
+                { key: "MANUAL_ASSIGNMENT_REQUIRED", label: "Manual Assign", count: tickets.filter((t: any) => t.status === "MANUAL_ASSIGNMENT_REQUIRED").length }
+              ].map(st => (
+                <button
+                  key={st.key}
+                  onClick={() => setSelectedStatusTab(st.key)}
+                  style={{
+                    padding: "0.25rem 0.55rem",
+                    fontSize: "0.72rem",
+                    fontWeight: "700",
+                    borderRadius: "6px",
+                    border: "1px solid",
+                    borderColor: selectedStatusTab === st.key ? "var(--primary)" : "#cbd5e1",
+                    backgroundColor: selectedStatusTab === st.key ? "var(--primary)" : "#ffffff",
+                    color: selectedStatusTab === st.key ? "#ffffff" : "#475569",
+                    cursor: "pointer"
+                  }}
+                >
+                  {st.label} ({st.count})
+                </button>
+              ))}
+            </div>
+          </div>
+
           <table style={styles.ticketTable}>
             <thead>
               <tr>
@@ -292,26 +328,28 @@ export function EngineerReport() {
               </tr>
             </thead>
             <tbody>
-              {tickets.map((t: any) => (
-                <tr key={t.id}>
-                  <td style={{ ...styles.ticketTd, fontWeight: "600" }}>{t.ticketNumber}</td>
-                  <td style={{ ...styles.ticketTd, fontFamily: "monospace" }}>{t.complaint?.applicationId}</td>
-                  <td style={styles.ticketTd}>{t.complaint?.complaintType}</td>
-                  <td style={{ 
-                    ...styles.ticketTd, 
-                    fontWeight: "600", 
-                    color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "inherit"
-                  }}>
-                    {t.priority}
-                  </td>
-                  <td style={styles.ticketTd}>{t.status.replace(/_/g, " ")}</td>
-                  <td style={styles.ticketTd}>{new Date(t.createdAt).toLocaleDateString()}</td>
-                </tr>
-              ))}
-              {tickets.length === 0 && (
+              {tickets
+                .filter((t: any) => selectedStatusTab === "ALL" || t.status === selectedStatusTab)
+                .map((t: any) => (
+                  <tr key={t.id}>
+                    <td style={{ ...styles.ticketTd, fontWeight: "600" }}>{t.ticketNumber}</td>
+                    <td style={{ ...styles.ticketTd, fontFamily: "monospace" }}>{t.complaint?.applicationId}</td>
+                    <td style={styles.ticketTd}>{t.complaint?.complaintType}</td>
+                    <td style={{ 
+                      ...styles.ticketTd, 
+                      fontWeight: "600", 
+                      color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "inherit"
+                    }}>
+                      {t.priority}
+                    </td>
+                    <td style={styles.ticketTd}>{t.status.replace(/_/g, " ")}</td>
+                    <td style={styles.ticketTd}>{new Date(t.createdAt).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              {tickets.filter((t: any) => selectedStatusTab === "ALL" || t.status === selectedStatusTab).length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
-                    No assigned tickets recorded.
+                    No tickets found for status "{selectedStatusTab.replace(/_/g, " ")}".
                   </td>
                 </tr>
               )}

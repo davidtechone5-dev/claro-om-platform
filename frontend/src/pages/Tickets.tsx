@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
-import { Calendar, User } from "lucide-react";
+import { Calendar } from "lucide-react";
 
 export function Tickets() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [tickets, setTickets] = useState<any[]>([]);
-  const [engineers, setEngineers] = useState<any[]>([]);
-  const [selectedEngineer, setSelectedEngineer] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [startDate, setStartDate] = useState("");
@@ -17,18 +15,6 @@ export function Tickets() {
   const [totalCount, setTotalCount] = useState(0);
 
   const limit = 25;
-
-  useEffect(() => {
-    async function loadEngineers() {
-      try {
-        const data = await api.getEngineers();
-        setEngineers(data || []);
-      } catch (err) {
-        console.error("Failed to load engineers list:", err);
-      }
-    }
-    loadEngineers();
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -43,8 +29,7 @@ export function Tickets() {
           limit,
           offset,
           startDate || undefined,
-          endDate || undefined,
-          selectedEngineer || undefined
+          endDate || undefined
         );
         if (active) {
           setTickets(data.tickets || []);
@@ -67,7 +52,7 @@ export function Tickets() {
       active = false;
       clearTimeout(timer);
     };
-  }, [statusFilter, searchTerm, page, startDate, endDate, selectedEngineer]);
+  }, [statusFilter, searchTerm, page, startDate, endDate]);
 
   const handleFilterChange = (status: string) => {
     setStatusFilter(status);
@@ -102,33 +87,16 @@ export function Tickets() {
         <div>
           <h1 className="page-title">Tickets Registry</h1>
           <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: "2px" }}>
-            Search, filter by engineer, complaint status, or date range
+            Search, filter by date, engineer name, or complaint status
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-          {/* Engineer Dropdown */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "#F8FAFC", padding: "0.35rem 0.65rem", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-            <User size={15} color="var(--primary)" />
-            <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#475569" }}>Engineer:</span>
-            <select
-              value={selectedEngineer}
-              onChange={(e) => { setSelectedEngineer(e.target.value); setPage(1); }}
-              className="form-input"
-              style={{ padding: "0.25rem 0.45rem", fontSize: "0.78rem", minWidth: "160px" }}
-            >
-              <option value="ALL">All Engineers ({engineers.length})</option>
-              {engineers.map(eng => (
-                <option key={eng.id} value={eng.id}>{eng.name}</option>
-              ))}
-            </select>
-          </div>
-
           <input 
             type="text" 
-            placeholder="Search Ticket ID, Customer..." 
+            placeholder="Search by Ticket ID, Customer, Engineer Name..." 
             className="form-input"
-            style={{ width: "240px", fontSize: "0.82rem" }}
+            style={styles.searchBar}
             value={searchTerm}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
@@ -151,9 +119,9 @@ export function Tickets() {
               className="form-input"
               style={{ padding: "0.25rem 0.45rem", fontSize: "0.78rem", width: "130px" }}
             />
-            {(startDate || endDate || selectedEngineer !== "ALL") && (
+            {(startDate || endDate) && (
               <button 
-                onClick={() => { setStartDate(""); setEndDate(""); setSelectedEngineer("ALL"); setPage(1); }}
+                onClick={() => { setStartDate(""); setEndDate(""); setPage(1); }}
                 className="btn-secondary"
                 style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
               >
