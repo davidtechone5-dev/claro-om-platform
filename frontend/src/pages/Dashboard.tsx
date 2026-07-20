@@ -848,7 +848,12 @@ export function Dashboard({ user }: DashboardProps) {
               </thead>
               <tbody>
                 {engineers.map(eng => {
-                  const engTickets = tickets.filter(t => t.assignments?.[0]?.engineer?.id === eng.id);
+                  const normName = eng.name?.trim()?.toLowerCase();
+                  const engTickets = tickets.filter(t => 
+                    t.assignments?.some((a: any) => 
+                      a.engineer?.id === eng.id || (normName && a.engineer?.name?.trim()?.toLowerCase() === normName)
+                    )
+                  );
                   const allCount = engTickets.length;
                   const resolvedTickets = engTickets.filter(t => t.status === "RESOLVED");
                   const resolvedCount = resolvedTickets.length;

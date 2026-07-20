@@ -233,9 +233,21 @@ export const ticketController = {
             ]
           }
         },
+        include: { state: true },
         orderBy: { name: "asc" }
       });
-      return res.status(200).json(engineers);
+
+      // Deduplicate by normalized name to guarantee single row per engineer across all DB environments
+      const deduplicatedMap = new Map<string, any>();
+      engineers.forEach(eng => {
+        const normKey = eng.name.trim().toLowerCase();
+        if (!deduplicatedMap.has(normKey)) {
+          deduplicatedMap.set(normKey, eng);
+        }
+      });
+
+      const finalEngineers = Array.from(deduplicatedMap.values());
+      return res.status(200).json(finalEngineers);
     } catch (e: any) {
       return res.status(500).json({ detail: e.message });
     }
