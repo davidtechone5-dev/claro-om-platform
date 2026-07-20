@@ -43,11 +43,13 @@ export const api = {
   /**
    * Tickets endpoints
    */
-  async getTickets(status?: string, priority?: string, search?: string, limit: number = 25, offset: number = 0) {
+  async getTickets(status?: string, priority?: string, search?: string, limit: number = 25, offset: number = 0, startDate?: string, endDate?: string) {
     let url = `${API_BASE_URL}/tickets?limit=${limit}&offset=${offset}`;
     if (status && status !== "ALL") url += `&status=${encodeURIComponent(status)}`;
     if (priority) url += `&priority=${encodeURIComponent(priority)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (startDate) url += `&startDate=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&endDate=${encodeURIComponent(endDate)}`;
     
     const res = await fetch(url, { headers: getHeaders() });
     if (!res.ok) {

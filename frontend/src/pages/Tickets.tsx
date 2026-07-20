@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
+import { Calendar } from "lucide-react";
 
 export function Tickets() {
   const navigate = useNavigate();
@@ -8,6 +9,8 @@ export function Tickets() {
   const [tickets, setTickets] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
@@ -24,7 +27,9 @@ export function Tickets() {
           undefined, // priority
           searchTerm,
           limit,
-          offset
+          offset,
+          startDate || undefined,
+          endDate || undefined
         );
         if (active) {
           setTickets(data.tickets || []);
@@ -47,7 +52,7 @@ export function Tickets() {
       active = false;
       clearTimeout(timer);
     };
-  }, [statusFilter, searchTerm, page]);
+  }, [statusFilter, searchTerm, page, startDate, endDate]);
 
   const handleFilterChange = (status: string) => {
     setStatusFilter(status);
@@ -78,16 +83,53 @@ export function Tickets() {
 
   return (
     <div className="animate-fade-in">
-      <div className="page-header">
-        <h1 className="page-title">Tickets Registry</h1>
-        <input 
-          type="text" 
-          placeholder="Search by Ticket ID, Customer, Engineer Name, or Application ID..." 
-          className="form-input"
-          style={styles.searchBar}
-          value={searchTerm}
-          onChange={(e) => handleSearchChange(e.target.value)}
-        />
+      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+        <div>
+          <h1 className="page-title">Tickets Registry</h1>
+          <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: "2px" }}>
+            Search, filter by date, engineer name, or complaint status
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <input 
+            type="text" 
+            placeholder="Search by Ticket ID, Customer, Engineer Name..." 
+            className="form-input"
+            style={styles.searchBar}
+            value={searchTerm}
+            onChange={(e) => handleSearchChange(e.target.value)}
+          />
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "#F8FAFC", padding: "0.35rem 0.65rem", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+            <Calendar size={15} color="var(--primary)" />
+            <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#475569" }}>Date:</span>
+            <input 
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+              className="form-input"
+              style={{ padding: "0.25rem 0.45rem", fontSize: "0.78rem", width: "130px" }}
+            />
+            <span style={{ fontSize: "0.78rem", color: "#64748b" }}>to</span>
+            <input 
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+              className="form-input"
+              style={{ padding: "0.25rem 0.45rem", fontSize: "0.78rem", width: "130px" }}
+            />
+            {(startDate || endDate) && (
+              <button 
+                onClick={() => { setStartDate(""); setEndDate(""); setPage(1); }}
+                className="btn-secondary"
+                style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem" }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Filter Tabs */}
