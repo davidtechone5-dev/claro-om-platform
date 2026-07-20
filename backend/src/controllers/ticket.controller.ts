@@ -474,7 +474,16 @@ export const ticketController = {
       const beforeDateLabel = beforeDate.toLocaleDateString("en-US", { day: "numeric", month: "short" });
 
       const engineers = await prisma.engineer.findMany({
-        where: { isActive: true, deletedAt: null },
+        where: {
+          isActive: true,
+          deletedAt: null,
+          NOT: {
+            OR: [
+              { name: { contains: "Alex", mode: "insensitive" } },
+              { email: { contains: "engineer@claro.com", mode: "insensitive" } }
+            ]
+          }
+        },
         include: { state: true },
         orderBy: { name: "asc" }
       });
