@@ -74,6 +74,7 @@ async function run() {
     const rows = parseCSV(sheetCSV);
     console.log("Parsed rows:", rows.length);
 
+    const headers = rows[0].map(h => h.trim().replace(/^\uFEFF/, ""));
     const dataRows = rows.slice(1);
     console.log(`✅ Loaded ${dataRows.length} total transaction rows from Sheet.`);
     console.log(`📊 First row has ${dataRows[0]?.length} columns`);
@@ -94,6 +95,11 @@ async function run() {
     for (let index = 0; index < dataRows.length; index++) {
       const row = dataRows[index];
       const rowNumber = index + 2;
+
+      const payload: Record<string, any> = {};
+      headers.forEach((header, colIndex) => {
+        payload[header] = row[colIndex]?.trim() || "";
+      });
 
       // Extract cells based on known column indexes
       const ticketId = row[0]?.trim();
@@ -249,7 +255,8 @@ async function run() {
           complaintType: issueType,
           description: description,
           submissionTimestamp: complaintDate,
-          syncStatus: "SUCCESS"
+          syncStatus: "SUCCESS",
+          metadata: payload
         }
       });
 
@@ -264,7 +271,8 @@ async function run() {
           status: normalizedStatusValue,
           priority: normalizedPriorityValue,
           createdAt: complaintDate,
-          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000)
+          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
+          metadata: payload
         }
       });
       ticketsCount++;

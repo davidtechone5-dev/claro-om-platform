@@ -39,10 +39,7 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
         <NavLink 
           to="/" 
           onClick={handleLinkClick}
-          style={({ isActive }) => ({
-            ...styles.navLink,
-            ...(isActive ? styles.navLinkActive : {})
-          })}
+          className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
         >
           <LayoutDashboard size={20} />
           <span>Dashboard</span>
@@ -53,10 +50,7 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
             <NavLink 
               to="/tickets" 
               onClick={handleLinkClick}
-              style={({ isActive }) => ({
-                ...styles.navLink,
-                ...(isActive ? styles.navLinkActive : {})
-              })}
+              className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
             >
               <Ticket size={20} />
               <span>Tickets Registry</span>
@@ -65,10 +59,7 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
             <NavLink 
               to="/warehouse" 
               onClick={handleLinkClick}
-              style={({ isActive }) => ({
-                ...styles.navLink,
-                ...(isActive ? styles.navLinkActive : {})
-              })}
+              className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
             >
               <Warehouse size={20} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
@@ -89,10 +80,7 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
             <NavLink 
               to="/amc" 
               onClick={handleLinkClick}
-              style={({ isActive }) => ({
-                ...styles.navLink,
-                ...(isActive ? styles.navLinkActive : {})
-              })}
+              className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
             >
               <Wrench size={20} />
               <span style={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
@@ -104,10 +92,7 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
             <NavLink 
               to="/engineers/overview" 
               onClick={handleLinkClick}
-              style={({ isActive }) => ({
-                ...styles.navLink,
-                ...(isActive ? styles.navLinkActive : {})
-              })}
+              className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
             >
               <Users size={20} />
               <span>Engineer Reports</span>

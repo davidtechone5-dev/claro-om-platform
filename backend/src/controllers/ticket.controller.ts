@@ -769,7 +769,7 @@ export const ticketController = {
                    }
                  }
                }
- 
+
                if (overallTat !== null) {
                  tatSum += overallTat;
                  validTatCount++;

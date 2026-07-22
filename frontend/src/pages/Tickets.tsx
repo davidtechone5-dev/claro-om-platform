@@ -137,10 +137,7 @@ export function Tickets() {
         {statuses.map((s) => (
           <button
             key={s.key}
-            style={{
-              ...styles.filterBtn,
-              ...(statusFilter === s.key ? styles.filterBtnActive : {})
-            }}
+            className={`filter-pill ${statusFilter === s.key ? "filter-pill-active" : ""}`}
             onClick={() => handleFilterChange(s.key)}
           >
             {s.label}

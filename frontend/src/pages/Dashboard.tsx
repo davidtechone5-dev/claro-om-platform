@@ -7,7 +7,13 @@ import {
   UserCheck,
   FileText,
   BarChart2,
-  History
+  History,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  UserPlus,
+  TrendingUp,
+  Search
 } from "lucide-react";
 
 export function Dashboard({ user: userProp }: { user?: any }) {
@@ -114,7 +120,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
       t.status !== "VERIFIED"
   ).length;
 
-  // Average Turnaround Time (in Hours)
+  // Average Turnaround Time (in Days)
   let tatSumDays = 0;
   let tatCount = 0;
   filteredTickets.forEach(t => {
@@ -126,18 +132,52 @@ export function Dashboard({ user: userProp }: { user?: any }) {
       tatCount++;
     }
   });
-  const avgTatHours = tatCount > 0 ? (tatSumDays / tatCount * 24).toFixed(1) : "484.4";
+  const avgTatDaysVal = tatCount > 0 ? (tatSumDays / tatCount).toFixed(1) : "20.2";
 
-  // Status Breakdown Map
-  const inProgressCount = filteredTickets.filter(t => t.status === "ASSIGNED" || t.status === "RECEIVED").length;
-  const remotelyResolvedCount = filteredTickets.filter(t => t.status === "REMOTELY_RESOLVED").length;
+  // Status Breakdown Map (Dynamic Aggregation of all statuses in filteredTickets)
+  const statusCountsMap: Record<string, number> = {};
+  filteredTickets.forEach(t => {
+    const s = t.status || "UNKNOWN";
+    statusCountsMap[s] = (statusCountsMap[s] || 0) + 1;
+  });
 
-  const statusBreakdown = [
-    { label: "In Progress", count: inProgressCount, color: "#2563EB" },
-    { label: "Resolved", count: resolvedCount, color: "#10B981" },
-    { label: "Needs Assignment", count: needsAssignCount, color: "#F59E0B" },
-    { label: "Remotely Resolved", count: remotelyResolvedCount, color: "#8B5CF6" }
-  ];
+  const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      RECEIVED: "Received / Registered",
+      ASSIGNED: "Assigned to Field",
+      INITIAL_VISIT_COMPLETED: "Diagnostic Visit Done",
+      MATERIAL_REQUESTED: "Material Requested",
+      INSURANCE_SUBMITTED: "Insurance Submitted",
+      ON_HOLD: "On Hold",
+      VERIFIED: "Verified",
+      RESOLVED: "Resolved / Closed",
+      REMOTELY_RESOLVED: "Remotely Resolved",
+      MANUAL_ASSIGNMENT_REQUIRED: "Manual Assign Required"
+    };
+    return labels[status] || status.replace(/_/g, " ");
+  };
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      RECEIVED: "#2563EB",
+      ASSIGNED: "#3B82F6",
+      INITIAL_VISIT_COMPLETED: "#10B981",
+      MATERIAL_REQUESTED: "#F59E0B",
+      INSURANCE_SUBMITTED: "#8B5CF6",
+      ON_HOLD: "#64748B",
+      VERIFIED: "#06B6D4",
+      RESOLVED: "#10B981",
+      REMOTELY_RESOLVED: "#8B5CF6",
+      MANUAL_ASSIGNMENT_REQUIRED: "#EF4444"
+    };
+    return colors[status] || "#64748B";
+  };
+
+  const statusBreakdown = Object.entries(statusCountsMap).map(([status, count]) => ({
+    label: getStatusLabel(status),
+    count,
+    color: getStatusColor(status)
+  })).sort((a, b) => b.count - a.count);
 
   // Priority Breakdown Counts
   const priorityCounts = {
@@ -262,11 +302,12 @@ export function Dashboard({ user: userProp }: { user?: any }) {
   }));
 
   // Live Ticket Stages Breakdown
-  const ivDoneCount = filteredTickets.filter(t => t.status === "INITIAL_VISIT_COMPLETED").length;
-  const srPendingCount = filteredTickets.filter(t => t.status === "SR_PENDING").length;
-  const matReqCount = filteredTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
-  const insuranceCount = filteredTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
-  const verifiedCount = filteredTickets.filter(t => t.status === "VERIFIED").length;
+  const inProgressCount = filteredTickets.filter(t => t && (t.status === "ASSIGNED" || t.status === "RECEIVED")).length;
+  const ivDoneCount = filteredTickets.filter(t => t && t.status === "INITIAL_VISIT_COMPLETED").length;
+  const srPendingCount = filteredTickets.filter(t => t && t.status === "SR_PENDING").length;
+  const matReqCount = filteredTickets.filter(t => t && t.status === "MATERIAL_REQUESTED").length;
+  const insuranceCount = filteredTickets.filter(t => t && t.status === "INSURANCE_SUBMITTED").length;
+  const verifiedCount = filteredTickets.filter(t => t && t.status === "VERIFIED").length;
 
   const liveStagesData = [
     { label: "In Progress", count: inProgressCount, color: "#2563EB" },
@@ -315,81 +356,85 @@ export function Dashboard({ user: userProp }: { user?: any }) {
 
   return (
     <div className="animate-fade-in" style={{ paddingBottom: "2rem" }}>
-      {/* Page Title & Operational Sub-Tabs Header */}
-      <div style={{ marginBottom: "1.25rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <h1 className="page-title">Operations & Maintenance Dashboard</h1>
-            <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "2px 0 0 0" }}>
-              Live Operations Monitoring · Multi-State Field Service Tracking
-            </p>
+      {/* Page Title & Operational Filters Header Row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
+        <div>
+          <h1 className="page-title">Operations & Maintenance Dashboard</h1>
+        </div>
+
+        {/* Global State & Engineer Dropdown Filters */}
+        {activeTab !== "engineers" && (
+          <div className="inline-filters">
+            <div className="inline-filters-label">
+              <Search size={15} />
+              <span>Filters:</span>
+            </div>
+
+            <select
+              value={selectedState}
+              onChange={(e) => setSelectedState(e.target.value)}
+              className="form-input"
+              style={{ fontSize: "0.85rem", fontWeight: "600", minWidth: "150px" }}
+            >
+              <option value="ALL">All States ({statesList.length})</option>
+              {statesList.map(st => (
+                <option key={st} value={st}>{st}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedEngineer}
+              onChange={(e) => setSelectedEngineer(e.target.value)}
+              className="form-input"
+              style={{ fontSize: "0.85rem", fontWeight: "600", minWidth: "220px" }}
+            >
+              <option value="ALL">All Field Engineers ({engineers.length})</option>
+              {engineers.map(eng => (
+                <option key={eng.id} value={eng.id}>{eng.name}</option>
+              ))}
+            </select>
           </div>
-        </div>
-
-        {/* 4 Sub-Tabs Navigation */}
-        <div style={styles.subTabHeader}>
-          <button
-            style={{ ...styles.subTabBtn, ...(activeTab === "overview" ? styles.subTabBtnActive : {}) }}
-            onClick={() => setActiveTab("overview")}
-          >
-            <BarChart2 size={16} />
-            <span>Overview</span>
-          </button>
-
-          <button
-            style={{ ...styles.subTabBtn, ...(activeTab === "engineers" ? styles.subTabBtnActive : {}) }}
-            onClick={() => setActiveTab("engineers")}
-          >
-            <UserCheck size={16} />
-            <span>Engineer Performance</span>
-          </button>
-
-          <button
-            style={{ ...styles.subTabBtn, ...(activeTab === "live_issues" ? styles.subTabBtnActive : {}) }}
-            onClick={() => setActiveTab("live_issues")}
-          >
-            <AlertTriangle size={16} />
-            <span>Live Issues & SLA</span>
-          </button>
-
-          <button
-            style={{ ...styles.subTabBtn, ...(activeTab === "legacy" ? styles.subTabBtnActive : {}) }}
-            onClick={() => setActiveTab("legacy")}
-          >
-            <History size={16} />
-            <span>Legacy History (2013-2026)</span>
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* Global State & Engineer Dropdown Filters */}
-      {activeTab !== "engineers" && (
-        <div style={{ display: "flex", gap: "1rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
-          <select
-            value={selectedState}
-            onChange={(e) => setSelectedState(e.target.value)}
-            className="form-input"
-            style={{ fontSize: "0.85rem", fontWeight: "600" }}
-          >
-            <option value="ALL">All States ({statesList.length})</option>
-            {statesList.map(st => (
-              <option key={st} value={st}>{st}</option>
-            ))}
-          </select>
+      {/* Expanded Grey Sub-Tabs Navigation Bar */}
+      <div className="modern-tab-header-expanded">
+        <button
+          className={`modern-tab-btn ${activeTab === "overview" ? "modern-tab-btn-active" : ""}`}
+          onClick={() => setActiveTab("overview")}
+        >
+          <BarChart2 size={16} />
+          <span>Overview</span>
+          <span className="tab-badge tab-badge-neutral">{totalCount}</span>
+        </button>
 
-          <select
-            value={selectedEngineer}
-            onChange={(e) => setSelectedEngineer(e.target.value)}
-            className="form-input"
-            style={{ fontSize: "0.85rem", fontWeight: "600" }}
-          >
-            <option value="ALL">All Field Engineers ({engineers.length})</option>
-            {engineers.map(eng => (
-              <option key={eng.id} value={eng.id}>{eng.name}</option>
-            ))}
-          </select>
-        </div>
-      )}
+        <button
+          className={`modern-tab-btn ${activeTab === "engineers" ? "modern-tab-btn-active" : ""}`}
+          onClick={() => setActiveTab("engineers")}
+        >
+          <UserCheck size={16} />
+          <span>Engineer Performance</span>
+          <span className="tab-badge tab-badge-neutral">{engineers.length}</span>
+        </button>
+
+        <button
+          className={`modern-tab-btn ${activeTab === "live_issues" ? "modern-tab-btn-active" : ""}`}
+          onClick={() => setActiveTab("live_issues")}
+        >
+          <AlertTriangle size={16} />
+          <span>Live Issues & SLA</span>
+          <span className="tab-badge tab-badge-alert">{openTickets.length}</span>
+        </button>
+
+        <button
+          className={`modern-tab-btn ${activeTab === "legacy" ? "modern-tab-btn-active" : ""}`}
+          onClick={() => setActiveTab("legacy")}
+        >
+          <History size={16} />
+          <span>Legacy History</span>
+          <span className="tab-badge tab-badge-neutral">14k+</span>
+        </button>
+      </div>
 
       {/* ========================================================= */}
       {/* TAB 1: OPERATIONS OVERVIEW (MATCHING SCREENSHOTS EXACTLY) */}
@@ -397,47 +442,89 @@ export function Dashboard({ user: userProp }: { user?: any }) {
       {activeTab === "overview" && (
         <>
           {/* Top 6 KPI Cards Row */}
-          <div style={styles.kpiRow6}>
+          <div className="kpi-grid">
             {/* Card 1: TOTAL TICKETS */}
-            <div className="panel-card" style={styles.kpiCardItem}>
-              <div style={styles.kpiCardLabel}>TOTAL TICKETS</div>
-              <div style={{ ...styles.kpiCardVal, color: "#DC2626" }}>{totalCount}</div>
-              <div style={styles.kpiCardSub}>All time</div>
+            <div className="kpi-card kpi-total">
+              <div className="kpi-card-content">
+                <div className="kpi-card-info">
+                  <div style={styles.kpiCardLabel}>TOTAL TICKETS</div>
+                  <div style={{ ...styles.kpiCardVal, color: "#DC2626" }}>{totalCount}</div>
+                  <div style={styles.kpiCardSub}>All time</div>
+                </div>
+                <div className="kpi-card-icon-wrapper">
+                  <BarChart2 size={22} />
+                </div>
+              </div>
             </div>
 
             {/* Card 2: RESOLVED */}
-            <div className="panel-card" style={styles.kpiCardItem}>
-              <div style={styles.kpiCardLabel}>RESOLVED</div>
-              <div style={{ ...styles.kpiCardVal, color: "#10B981" }}>{resolvedCount}</div>
-              <div style={styles.kpiCardSub}>{resolutionRate}% resolution rate</div>
+            <div className="kpi-card kpi-resolved">
+              <div className="kpi-card-content">
+                <div className="kpi-card-info">
+                  <div style={styles.kpiCardLabel}>RESOLVED</div>
+                  <div style={{ ...styles.kpiCardVal, color: "#10B981" }}>{resolvedCount}</div>
+                  <div style={styles.kpiCardSub}>{resolutionRate}% resolution rate</div>
+                </div>
+                <div className="kpi-card-icon-wrapper">
+                  <CheckCircle size={22} />
+                </div>
+              </div>
             </div>
 
             {/* Card 3: PENDING */}
-            <div className="panel-card" style={styles.kpiCardItem}>
-              <div style={styles.kpiCardLabel}>PENDING</div>
-              <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>{pendingCount}</div>
-              <div style={styles.kpiCardSub}>{onHoldCount} on hold</div>
+            <div className="kpi-card kpi-pending">
+              <div className="kpi-card-content">
+                <div className="kpi-card-info">
+                  <div style={styles.kpiCardLabel}>PENDING</div>
+                  <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>{pendingCount}</div>
+                  <div style={styles.kpiCardSub}>{onHoldCount} on hold</div>
+                </div>
+                <div className="kpi-card-icon-wrapper">
+                  <Clock size={22} />
+                </div>
+              </div>
             </div>
 
             {/* Card 4: CRITICAL + URGENT */}
-            <div className="panel-card" style={styles.kpiCardItem}>
-              <div style={styles.kpiCardLabel}>CRITICAL + URGENT</div>
-              <div style={{ ...styles.kpiCardVal, color: "#DC2626" }}>{criticalUrgentCount}</div>
-              <div style={styles.kpiCardSub}>Unresolved</div>
+            <div className="kpi-card kpi-critical">
+              <div className="kpi-card-content">
+                <div className="kpi-card-info">
+                  <div style={styles.kpiCardLabel}>CRITICAL + URGENT</div>
+                  <div style={{ ...styles.kpiCardVal, color: "#DC2626" }}>{criticalUrgentCount}</div>
+                  <div style={styles.kpiCardSub}>Unresolved</div>
+                </div>
+                <div className="kpi-card-icon-wrapper">
+                  <AlertCircle size={22} />
+                </div>
+              </div>
             </div>
 
             {/* Card 5: NEEDS ASSIGNMENT */}
-            <div className="panel-card" style={styles.kpiCardItem}>
-              <div style={styles.kpiCardLabel}>NEEDS ASSIGNMENT</div>
-              <div style={{ ...styles.kpiCardVal, color: "#D97706" }}>{needsAssignCount}</div>
-              <div style={styles.kpiCardSub}>Action required</div>
+            <div className="kpi-card kpi-needs">
+              <div className="kpi-card-content">
+                <div className="kpi-card-info">
+                  <div style={styles.kpiCardLabel}>NEEDS ASSIGNMENT</div>
+                  <div style={{ ...styles.kpiCardVal, color: "#D97706" }}>{needsAssignCount}</div>
+                  <div style={styles.kpiCardSub}>Action required</div>
+                </div>
+                <div className="kpi-card-icon-wrapper">
+                  <UserPlus size={22} />
+                </div>
+              </div>
             </div>
 
             {/* Card 6: AVG TAT */}
-            <div className="panel-card" style={styles.kpiCardItem}>
-              <div style={styles.kpiCardLabel}>AVG TAT</div>
-              <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>{avgTatHours}</div>
-              <div style={styles.kpiCardSub}>Hours — resolved tickets</div>
+            <div className="kpi-card kpi-tat">
+              <div className="kpi-card-content">
+                <div className="kpi-card-info">
+                  <div style={styles.kpiCardLabel}>AVG TAT</div>
+                  <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>{avgTatDaysVal}</div>
+                  <div style={styles.kpiCardSub}>Days — resolved tickets</div>
+                </div>
+                <div className="kpi-card-icon-wrapper">
+                  <TrendingUp size={22} />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -541,7 +628,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
           </div>
 
           {/* Bottom Row (3 Cards: State-Wise Count, Live Ticket Stages, Ticket Volume 14 Days) */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1.2fr 1fr", gap: "1.25rem" }}>
+          <div className="overview-bottom-grid">
             {/* 1. STATE-WISE / DISTRICT-WISE COUNT */}
             <div className="panel-card" style={styles.cardPadding}>
               <h3 style={styles.sectionTitle}>{isStateSelected ? `DISTRICT-WISE COUNT (${selectedState})` : "STATE-WISE COUNT"}</h3>
@@ -873,44 +960,44 @@ export function Dashboard({ user: userProp }: { user?: any }) {
       {activeTab === "legacy" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           {/* Top 7 KPI Cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "0.75rem" }}>
-            <div className="panel-card" style={styles.kpiCardItem}>
+          <div className="kpi-grid-7">
+            <div className="kpi-card kpi-total">
               <div style={styles.kpiCardLabel}>TOTAL COMPLAINTS</div>
               <div style={{ ...styles.kpiCardVal, color: "#DC2626" }}>14,247</div>
               <div style={styles.kpiCardSub}>Sep 2013 - Jun 2026</div>
             </div>
 
-            <div className="panel-card" style={styles.kpiCardItem}>
+            <div className="kpi-card kpi-resolved">
               <div style={styles.kpiCardLabel}>RESOLVED / CLOSED</div>
               <div style={{ ...styles.kpiCardVal, color: "#10B981" }}>13,825</div>
               <div style={styles.kpiCardSub}>97.0% resolution rate</div>
             </div>
 
-            <div className="panel-card" style={styles.kpiCardItem}>
+            <div className="kpi-card kpi-pending">
               <div style={styles.kpiCardLabel}>MEDIAN TAT</div>
               <div style={{ ...styles.kpiCardVal, color: "#2563EB" }}>4 days</div>
               <div style={styles.kpiCardSub}>Avg 24.2d (outliers excl.)</div>
             </div>
 
-            <div className="panel-card" style={styles.kpiCardItem}>
+            <div className="kpi-card kpi-tat">
               <div style={styles.kpiCardLabel}>STATES COVERED</div>
               <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>17</div>
               <div style={styles.kpiCardSub}>507 districts</div>
             </div>
 
-            <div className="panel-card" style={styles.kpiCardItem}>
+            <div className="kpi-card kpi-tat">
               <div style={styles.kpiCardLabel}>ENGINEERS INVOLVED</div>
               <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>72</div>
               <div style={styles.kpiCardSub}>Field & EPC combined</div>
             </div>
 
-            <div className="panel-card" style={styles.kpiCardItem}>
+            <div className="kpi-card kpi-needs">
               <div style={styles.kpiCardLabel}>REPEAT COMPLAINT RATE</div>
               <div style={{ ...styles.kpiCardVal, color: "#D97706" }}>38.8%</div>
               <div style={styles.kpiCardSub}>3,119 of 8,037 installs</div>
             </div>
 
-            <div className="panel-card" style={styles.kpiCardItem}>
+            <div className="kpi-card kpi-tat">
               <div style={styles.kpiCardLabel}>UNIQUE INSTALLATIONS</div>
               <div style={{ ...styles.kpiCardVal, color: "#0F172A" }}>8,037</div>
               <div style={styles.kpiCardSub}>Application IDs on record</div>
