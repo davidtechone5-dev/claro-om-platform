@@ -1,10 +1,10 @@
 import dotenv from "dotenv";
-import { prisma } from "../db.js";
-import { parseCSV } from "../utils/csv.js";
-import { parseSafeDate, parseMDYDate, parseDMYDate } from "../utils/date.js";
-import { normalizeStatus, normalizePriority, normalizeMaterialStatus } from "../utils/status.js";
-import { engineerService } from "../services/engineer.service.js";
-import { ticketService } from "../services/ticket.service.js";
+import { prisma } from "../db";
+import { parseCSV } from "../utils/csv";
+import { parseSafeDate, parseMDYDate, parseDMYDate } from "../utils/date";
+import { normalizeStatus, normalizePriority, normalizeMaterialStatus } from "../utils/status";
+import { engineerService } from "../services/engineer.service";
+import { ticketService } from "../services/ticket.service";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 

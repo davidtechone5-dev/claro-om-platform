@@ -320,7 +320,7 @@ export function EngineerReport() {
               <tr>
                 <th style={styles.ticketTh}>Ticket ID</th>
                 <th style={styles.ticketTh}>Application ID</th>
-                <th style={styles.ticketTh}>Complaint Type</th>
+                <th style={styles.ticketTh}>Ticket Type</th>
                 <th style={styles.ticketTh}>Priority</th>
                 <th style={styles.ticketTh}>Current Stage</th>
                 <th style={styles.ticketTh}>Registered At</th>

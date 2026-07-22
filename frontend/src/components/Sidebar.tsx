@@ -71,7 +71,19 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
               })}
             >
               <Warehouse size={20} />
-              <span>Warehouse Logs</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+                <span>Warehouse Logs</span>
+                <span style={{ 
+                  fontSize: "0.62rem", 
+                  backgroundColor: "#fee2e2", 
+                  color: "#b91c1c", 
+                  padding: "0.1rem 0.35rem", 
+                  borderRadius: "3px", 
+                  fontWeight: "800", 
+                  textTransform: "uppercase",
+                  letterSpacing: "0.02em"
+                }}>Beta</span>
+              </div>
             </NavLink>
 
             <NavLink 

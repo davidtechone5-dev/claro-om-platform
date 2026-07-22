@@ -2,6 +2,58 @@ import { Response } from "express";
 import { prisma } from "../db.js";
 import { AuthenticatedRequest } from "../middleware/auth.js";
 
+const getServiceReportDateTime = (t: any): Date | null => {
+  if (!t.metadata || typeof t.metadata !== "object") return null;
+  const meta = t.metadata as Record<string, any>;
+  
+  const dateValue = meta["Service Report Date"] ?? meta["service_report_date"];
+  const timeValue = meta["Service Report Timestamp"] ?? meta["service_report_timestamp"] ?? meta["Service Report Time"] ?? meta["service_report_time"];
+  
+  if (!dateValue) return null;
+  
+  const dateStr = String(dateValue).trim();
+  const timeStr = timeValue ? String(timeValue).trim() : "00:00:00";
+  
+  const dateMatch = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (!dateMatch) return null;
+  
+  const [, day, month, year] = dateMatch;
+  const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  
+  const hour = timeMatch ? Number(timeMatch[1]) : 0;
+  const minute = timeMatch ? Number(timeMatch[2]) : 0;
+  const second = timeMatch ? Number(timeMatch[3] ?? 0) : 0;
+  
+  const result = new Date(Number(year), Number(month) - 1, Number(day), hour, minute, second);
+  return Number.isNaN(result.getTime()) ? null : result;
+};
+
+const getAssignmentDateTime = (t: any): Date | null => {
+  if (!t.metadata || typeof t.metadata !== "object") return null;
+  const meta = t.metadata as Record<string, any>;
+  
+  const dateValue = meta["Assignment Date"] ?? meta["assigned_date"] ?? meta["Created At"] ?? meta["Date"] ?? meta["date"];
+  const timeValue = meta["Assignment Time"] ?? meta["assigned_time"] ?? meta["Timestamp"] ?? meta["Time"];
+  
+  if (!dateValue) return null;
+  
+  const dateStr = String(dateValue).trim();
+  const timeStr = timeValue ? String(timeValue).trim() : "00:00:00";
+  
+  const dateMatch = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (!dateMatch) return null;
+  
+  const [, day, month, year] = dateMatch;
+  const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  
+  const hour = timeMatch ? Number(timeMatch[1]) : 0;
+  const minute = timeMatch ? Number(timeMatch[2]) : 0;
+  const second = timeMatch ? Number(timeMatch[3] ?? 0) : 0;
+  
+  const result = new Date(Number(year), Number(month) - 1, Number(day), hour, minute, second);
+  return Number.isNaN(result.getTime()) ? null : result;
+};
+
 export const ticketController = {
   /**
    * List tickets with pagination & filters (e.g., status, priority)
@@ -12,7 +64,22 @@ export const ticketController = {
 
     const whereClause: any = { deletedAt: null };
     if (status && status.toString() !== "ALL") {
-      whereClause.status = status.toString();
+      const s = status.toString();
+      if (s === "INITIAL_VISIT_COMPLETED") {
+        whereClause.status = { not: "RESOLVED" };
+        whereClause.OR = [
+          { status: "INITIAL_VISIT_COMPLETED" },
+          { initialVisits: { some: { deletedAt: null } } }
+        ];
+      } else if (s === "MANUAL_ASSIGNMENT_REQUIRED") {
+        whereClause.OR = [
+          { status: "MANUAL_ASSIGNMENT_REQUIRED" },
+          { assignments: { none: { deletedAt: null } } }
+        ];
+        whereClause.status = { notIn: ["RESOLVED", "CLOSED", "ARCHIVED"] };
+      } else {
+        whereClause.status = s;
+      }
     }
     if (priority) {
       whereClause.priority = priority.toString();
@@ -380,20 +447,28 @@ export const ticketController = {
       }
       const visitsDone = await prisma.initialVisit.count({ where: visitWhere });
 
-      // Calculate Average Turn-Around-Time (TAT) in days based on assignedAt -> serviceReportDate
+      // Calculate Average Turn-Around-Time (TAT) in days (preferring Google Sheet "Overall TAT (days)")
       let tatSum = 0;
       let validTatCount = 0;
-      resolvedTickets.forEach(t => {
-        const assignTime = new Date(t.assignedAt).getTime();
-        const resTime = t.serviceReports?.[0]?.reportDate 
-          ? new Date(t.serviceReports[0].reportDate).getTime() 
-          : new Date(t.updatedAt).getTime();
-        const diffDays = (resTime - assignTime) / (1000 * 60 * 60 * 24);
-        if (diffDays >= 0) {
-          tatSum += diffDays;
-          validTatCount++;
-        }
-      });
+       resolvedTickets.forEach(t => {
+         let overallTat: number | null = null;
+ 
+         if (t.metadata && typeof t.metadata === "object") {
+           const meta = t.metadata as Record<string, any>;
+           const val = meta["Overall TAT (days)"] ?? meta["overall_tat_days"] ?? meta["Overall TAT"] ?? meta["overall_tat"];
+           if (val !== undefined && val !== null && val !== "") {
+             const num = parseFloat(val);
+             if (!isNaN(num) && num >= 0) {
+               overallTat = num;
+             }
+           }
+         }
+ 
+         if (overallTat !== null) {
+           tatSum += overallTat;
+           validTatCount++;
+         }
+       });
       const avgTat = validTatCount > 0 ? parseFloat((tatSum / validTatCount).toFixed(1)) : 0;
 
       // Group tickets by status
@@ -611,7 +686,8 @@ export const ticketController = {
                       masterInstallation: { include: { state: true, district: { include: { state: true } } } }
                     }
                   },
-                  serviceReports: { where: { deletedAt: null }, orderBy: { reportDate: "desc" } } 
+                  serviceReports: { where: { deletedAt: null }, orderBy: { reportDate: "desc" } },
+                  initialVisits: { where: { deletedAt: null }, orderBy: { visitDate: "desc" } }
                 }
               }
             }
@@ -623,6 +699,11 @@ export const ticketController = {
             return ticket.updatedAt ? new Date(ticket.updatedAt) : null;
           };
 
+          const getVisitDate = (ticket: any): Date | null => {
+            if (ticket.initialVisits?.[0]?.visitDate) return new Date(ticket.initialVisits[0].visitDate);
+            return null;
+          };
+
           const getAssignmentDate = (a: any): Date | null => {
             if (a.assignedAt) return new Date(a.assignedAt);
             return null;
@@ -631,34 +712,74 @@ export const ticketController = {
           const allTickets = assignments.map(a => ({
             ...a.ticket,
             assignedAt: getAssignmentDate(a),
-            resolutionDate: getResolutionDate(a.ticket)
+            resolutionDate: getResolutionDate(a.ticket),
+            visitDate: getVisitDate(a.ticket)
           }));
 
-          // All-time / Lifetime cumulative metrics
           const totalAssigned = allTickets.length;
           const totalResolved = allTickets.filter(t => t.status === "RESOLVED").length;
 
-          // Date window filtered tickets
+          // Date window filtered tickets for assignment
           const windowTickets = allTickets.filter(t => {
             const time = t.assignedAt ? new Date(t.assignedAt).getTime() : (t.createdAt ? new Date(t.createdAt).getTime() : 0);
             return time >= startFilter.getTime() && time <= endFilter.getTime();
           });
 
-          // If date range is default (all-time view), use allTickets, otherwise use windowTickets
           const targetTickets = (startDate || endDate) ? windowTickets : allTickets;
 
           const allCount = targetTickets.length;
           const receivedCount = targetTickets.filter(t => t.status === "RECEIVED").length;
           const assignedCount = targetTickets.filter(t => t.status === "ASSIGNED").length;
-          const visitedCount = targetTickets.filter(t => t.status === "INITIAL_VISIT_COMPLETED").length;
           const materialReqCount = targetTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
           const insuranceCount = targetTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
-          const resolvedCount = targetTickets.filter(t => t.status === "RESOLVED").length;
           const manualAssignCount = targetTickets.filter(t => t.status === "MANUAL_ASSIGNMENT_REQUIRED").length;
 
-          // Legacy metrics for compatibility
+          // Resolved Count calculated based on Service Report Submission Date (irrespective of complaint date)
+          const resolvedCount = (startDate || endDate)
+            ? allTickets.filter(t => {
+                if (t.status !== "RESOLVED" || !t.resolutionDate) return false;
+                const time = t.resolutionDate.getTime();
+                return time >= startFilter.getTime() && time <= endFilter.getTime();
+              }).length
+            : allTickets.filter(t => t.status === "RESOLVED").length;
+
+          // Visits Count calculated based on Initial Visit Date (irrespective of complaint date)
+          const visitedCount = (startDate || endDate)
+            ? allTickets.filter(t => {
+                if (!t.visitDate) return false;
+                const time = t.visitDate.getTime();
+                return time >= startFilter.getTime() && time <= endFilter.getTime();
+              }).length
+            : allTickets.filter(t => t.initialVisits?.length > 0 || t.status === "INITIAL_VISIT_COMPLETED").length;
+
+           // Calculate average TAT for resolved tickets (preferring Google Sheet "Overall TAT (days)")
+           let tatSum = 0;
+           let validTatCount = 0;
+           allTickets.forEach(t => {
+             if (t.status === "RESOLVED") {
+               let overallTat: number | null = null;
+               
+               if (t.metadata && typeof t.metadata === "object") {
+                 const meta = t.metadata as Record<string, any>;
+                 const val = meta["Overall TAT (days)"] ?? meta["overall_tat_days"] ?? meta["Overall TAT"] ?? meta["overall_tat"];
+                 if (val !== undefined && val !== null && val !== "") {
+                   const num = parseFloat(val);
+                   if (!isNaN(num) && num >= 0) {
+                     overallTat = num;
+                   }
+                 }
+               }
+ 
+               if (overallTat !== null) {
+                 tatSum += overallTat;
+                 validTatCount++;
+               }
+             }
+           });
+           const avgTatNum = validTatCount > 0 ? parseFloat((tatSum / validTatCount).toFixed(1)) : 0;
+
           const assignedInWindow = windowTickets.length;
-          const resolvedInWindow = windowTickets.filter(t => t.status === "RESOLVED").length;
+          const resolvedInWindow = resolvedCount;
 
           const { stateCode, stateName } = resolveEngineerState(eng, assignments);
 
@@ -677,13 +798,15 @@ export const ticketController = {
             manualAssignCount,
             totalAssigned,
             totalResolved,
+            avgTat: `${avgTatNum}d`,
+            avgTatNum,
             assignedInWindow,
             resolvedInWindow
           };
         })
       );
 
-      // Group engineerReports by normalized name to guarantee single row per engineer in any environment
+      // Group engineerReports by normalized name
       const deduplicatedMap = new Map<string, any>();
 
       engineerReports.forEach(item => {
@@ -704,11 +827,27 @@ export const ticketController = {
           existing.totalResolved += item.totalResolved;
           existing.assignedInWindow += item.assignedInWindow;
           existing.resolvedInWindow += item.resolvedInWindow;
+          existing.avgTatNum = parseFloat(((existing.avgTatNum + item.avgTatNum) / 2).toFixed(1));
+          existing.avgTat = `${existing.avgTatNum}d`;
         }
       });
 
       const finalEngineerReports = Array.from(deduplicatedMap.values());
-      finalEngineerReports.sort((a, b) => b.allCount - a.allCount);
+
+      // Calculate max resolved for Volume score
+      const maxTeamResolved = Math.max(...finalEngineerReports.map(e => e.resolvedCount), 1);
+
+      // Calculate Score: Volume (40) + Resolution Rate (40) + TAT (20)
+      finalEngineerReports.forEach(e => {
+        const volumeScore = Math.min(40, (e.resolvedCount / maxTeamResolved) * 40);
+        const resRate = e.allCount > 0 ? (e.resolvedCount / e.allCount) : (e.totalAssigned > 0 ? (e.resolvedCount / e.totalAssigned) : 0);
+        const resScore = Math.min(40, resRate * 40);
+        const tatScore = Math.max(0, Math.min(20, (1 - (e.avgTatNum / 14)) * 20));
+        e.score = Math.round(volumeScore + resScore + tatScore);
+        e.activeCount = Math.max(0, e.allCount - e.resolvedCount);
+      });
+
+      finalEngineerReports.sort((a, b) => b.score - a.score || b.allCount - a.allCount);
 
       const totals = {
         allCount: finalEngineerReports.reduce((acc, e) => acc + e.allCount, 0),
@@ -725,14 +864,58 @@ export const ticketController = {
         resolvedInWindow: finalEngineerReports.reduce((acc, e) => acc + e.resolvedInWindow, 0)
       };
 
+      // Find top workload engineer
+      const topEng = [...finalEngineerReports].sort((a, b) => b.allCount - a.allCount)[0];
+      const topWorkload = {
+        name: topEng ? topEng.name : "N/A",
+        stateCode: topEng ? topEng.stateCode : "MH",
+        count: topEng ? topEng.allCount : 0
+      };
+
+      const teamAvgScore = Math.round(
+        finalEngineerReports.reduce((acc, e) => acc + e.score, 0) / (finalEngineerReports.length || 1)
+      );
+
+      const teamAvgTatNum = (
+        finalEngineerReports.reduce((acc, e) => acc + e.avgTatNum, 0) / (finalEngineerReports.length || 1)
+      ).toFixed(1);
+
+      const top5Leaderboard = finalEngineerReports.slice(0, 5).map((e, idx) => {
+        const parts = e.name.trim().split(" ");
+        const initials = parts.length >= 2 ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase() : parts[0].substring(0, 2).toUpperCase();
+        return {
+          rank: idx + 1,
+          name: e.name,
+          stateCode: e.stateCode,
+          assigned: e.allCount,
+          resolved: e.resolvedCount,
+          avgTat: e.avgTat,
+          score: e.score,
+          initials
+        };
+      });
+
+      const top8AssignedVsResolved = [...finalEngineerReports]
+        .sort((a, b) => b.allCount - a.allCount)
+        .slice(0, 8)
+        .map(e => ({
+          name: e.name.split(" ")[0],
+          fullName: e.name,
+          assigned: e.allCount,
+          resolved: e.resolvedCount
+        }));
+
       const summaryCards = {
-        activeEngineers: finalEngineerReports.length,
+        activeEngineers: finalEngineerReports.filter(e => e.allCount > 0).length || finalEngineerReports.length,
         totalAssigned: totals.allCount,
         totalResolved: totals.resolvedCount,
         assignedWindow: totals.allCount,
         resolvedWindow: totals.resolvedCount,
         assignedByTickets: totals.allCount,
-        resolvedByTickets: totals.resolvedCount
+        resolvedByTickets: totals.resolvedCount,
+        avgScore: teamAvgScore,
+        avgTatDays: teamAvgTatNum,
+        topWorkload
       };
 
       const formatDateStr = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -752,6 +935,8 @@ export const ticketController = {
           endDate: endFilter.toISOString().split("T")[0]
         },
         summaryCards,
+        top5Leaderboard,
+        top8AssignedVsResolved,
         engineers: finalEngineerReports,
         totals
       });

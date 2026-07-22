@@ -72,6 +72,7 @@ export function Tickets() {
     { key: "INITIAL_VISIT_COMPLETED", label: "Visited" },
     { key: "MATERIAL_REQUESTED", label: "Material Req" },
     { key: "INSURANCE_SUBMITTED", label: "Insurance" },
+    { key: "ON_HOLD", label: "On Hold" },
     { key: "RESOLVED", label: "Resolved" },
     { key: "MANUAL_ASSIGNMENT_REQUIRED", label: "Manual Assign" }
   ];
@@ -86,7 +87,7 @@ export function Tickets() {
         <div>
           <h1 className="page-title">Tickets Registry</h1>
           <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: "2px" }}>
-            Search, filter by date, engineer name, or complaint status
+            Search, filter by date, engineer name, or ticket status
           </div>
         </div>
 

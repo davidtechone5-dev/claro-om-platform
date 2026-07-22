@@ -43,15 +43,40 @@ export const api = {
   /**
    * Tickets endpoints
    */
-  async getTickets(status?: string, priority?: string, search?: string, limit: number = 25, offset: number = 0, startDate?: string, endDate?: string, engineerId?: string) {
-    let url = `${API_BASE_URL}/tickets?limit=${limit}&offset=${offset}`;
-    if (status && status !== "ALL") url += `&status=${encodeURIComponent(status)}`;
-    if (priority) url += `&priority=${encodeURIComponent(priority)}`;
-    if (search) url += `&search=${encodeURIComponent(search)}`;
-    if (startDate) url += `&startDate=${encodeURIComponent(startDate)}`;
-    if (endDate) url += `&endDate=${encodeURIComponent(endDate)}`;
-    if (engineerId && engineerId !== "ALL") url += `&engineerId=${encodeURIComponent(engineerId)}`;
-    
+  async getTickets(
+    statusOrOpts?: string | any,
+    priority?: string,
+    search?: string,
+    limit: number = 25,
+    offset: number = 0,
+    startDate?: string,
+    endDate?: string,
+    engineerId?: string
+  ) {
+    let opts: any = {};
+    if (typeof statusOrOpts === "object" && statusOrOpts !== null) {
+      opts = statusOrOpts;
+    } else {
+      opts = { status: statusOrOpts, priority, search, limit, offset, startDate, endDate, engineerId };
+    }
+
+    const st = opts.status;
+    const pr = opts.priority;
+    const sr = opts.search;
+    const lm = opts.limit ?? 25;
+    const off = opts.offset ?? 0;
+    const sDate = opts.startDate;
+    const eDate = opts.endDate;
+    const engId = opts.engineerId;
+
+    let url = `${API_BASE_URL}/tickets?limit=${lm}&offset=${off}`;
+    if (st && st !== "ALL") url += `&status=${encodeURIComponent(st)}`;
+    if (pr) url += `&priority=${encodeURIComponent(pr)}`;
+    if (sr) url += `&search=${encodeURIComponent(sr)}`;
+    if (sDate) url += `&startDate=${encodeURIComponent(sDate)}`;
+    if (eDate) url += `&endDate=${encodeURIComponent(eDate)}`;
+    if (engId && engId !== "ALL") url += `&engineerId=${encodeURIComponent(engId)}`;
+
     const res = await fetch(url, { headers: getHeaders() });
     if (!res.ok) {
       throw new Error(`Failed to load tickets: ${res.statusText}`);

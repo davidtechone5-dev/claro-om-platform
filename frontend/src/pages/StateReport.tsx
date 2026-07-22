@@ -196,7 +196,7 @@ export function StateReport() {
               </thead>
               <tbody>
                 <tr>
-                  <td style={styles.kpiTd}>Total Registered Complaints</td>
+                  <td style={styles.kpiTd}>Total Registered Tickets</td>
                   <td style={styles.kpiTd}>--</td>
                   <td style={{ ...styles.kpiTd, fontWeight: "600" }}>{totalTickets}</td>
                   <td style={styles.kpiTd}>Total caseload inside {stateName}</td>

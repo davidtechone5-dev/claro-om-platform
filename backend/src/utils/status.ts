@@ -8,8 +8,10 @@ export function normalizeStatus(statusStr: string): string | null {
   if (s === "VISITED" || s === "INITIALVISITCOMPLETED" || s === "INITIALVISITDONE" || s === "3DIAGNOSTICCHECKED" || s === "DIAGNOSTICCHECKED") return "INITIAL_VISIT_COMPLETED";
   if (s === "MATERIALREQ" || s === "MATERIALREQUESTED" || s === "4MATERIALREQUESTED" || s === "MATERIALSREQUIRED" || s === "MATERIALREQUIRED" || s === "MATERIALSREQUESTED" || s === "4MATERIALSREQUIRED") return "MATERIAL_REQUESTED";
   if (s === "INSURANCE" || s === "INSURANCESUBMITTED" || s === "5INSURANCESUBMITTED" || s === "INSURANCECLAIMSUBMITTED" || s === "INSURANCEMOVED") return "INSURANCE_SUBMITTED";
-  if (s === "RESOLVED" || s === "FULLYRESOLVED" || s === "6FULLYRESOLVED" || s === "CLOSED" || s === "REMOTELYRESOLVED" || s === "VERIFIED") return "RESOLVED";
-  if (s === "MANUALASSIGN" || s === "MANUALASSIGNMENTREQUIRED" || s === "NEEDSASSIGNMENT" || s === "NEEDSMANUALASSIGNMENT" || s === "ONHOLD") return "MANUAL_ASSIGNMENT_REQUIRED";
+  if (s === "RESOLVED" || s === "FULLYRESOLVED" || s === "6FULLYRESOLVED" || s === "CLOSED" || s === "REMOTELYRESOLVED") return "RESOLVED";
+  if (s === "VERIFIED") return "VERIFIED";
+  if (s === "ONHOLD" || s === "ON_HOLD" || s === "HOLD") return "ON_HOLD";
+  if (s === "MANUALASSIGN" || s === "MANUALASSIGNMENTREQUIRED" || s === "NEEDSASSIGNMENT" || s === "NEEDSMANUALASSIGNMENT") return "MANUAL_ASSIGNMENT_REQUIRED";
   return null;
 }
 

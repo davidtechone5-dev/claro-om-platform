@@ -179,7 +179,7 @@ export function TicketDetails() {
                 </div>
               </div>
               <div style={{ gridColumn: "span 2" }}>
-                <label style={styles.detailLabel}>Complaint Log Description</label>
+                <label style={styles.detailLabel}>Ticket Log Description</label>
                 <div style={{ ...styles.detailVal, whiteSpace: "pre-wrap", lineHeight: "1.6", backgroundColor: "#F8FAFC", padding: "0.8rem", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                   {ticket.complaint?.description || "No description provided."}
                 </div>

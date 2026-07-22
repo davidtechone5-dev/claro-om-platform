@@ -25,8 +25,18 @@ export function Warehouse() {
 
   return (
     <div className="animate-fade-in">
-      <div className="page-header">
-        <h1 className="page-title">Warehouse Logs</h1>
+      <div className="page-header" style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+        <h1 className="page-title" style={{ margin: 0 }}>Warehouse Logs</h1>
+        <span style={{ 
+          fontSize: "0.75rem", 
+          backgroundColor: "#fee2e2", 
+          color: "#b91c1c", 
+          padding: "0.2rem 0.5rem", 
+          borderRadius: "4px", 
+          fontWeight: "800", 
+          textTransform: "uppercase",
+          letterSpacing: "0.03em"
+        }}>Beta</span>
       </div>
 
       <div className="panel-card" style={{ padding: "0" }}>
