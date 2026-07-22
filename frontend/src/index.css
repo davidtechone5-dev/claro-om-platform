@@ -219,6 +219,24 @@ aside {
   border: 1px solid #FCA5A5;
 }
 
+.status-on_hold, .status-on {
+  background-color: #F8FAFC;
+  color: #475569;
+  border: 1px solid #CBD5E1;
+}
+
+.status-insurance_submitted, .status-insurance {
+  background-color: #F3E8FF;
+  color: #6B21A8;
+  border: 1px solid #E9D5FF;
+}
+
+.status-verified {
+  background-color: #E0F2FE;
+  color: #0369A1;
+  border: 1px solid #BAE6FD;
+}
+
 /* Primary Button */
 .btn-primary {
   background-color: var(--primary);
