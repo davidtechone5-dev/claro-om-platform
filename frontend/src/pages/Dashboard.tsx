@@ -108,10 +108,10 @@ export function Dashboard({ user: userProp }: { user?: any }) {
   ).length;
 
   const needsAssignCount = filteredTickets.filter(
-    t => (t.status === "MANUAL_ASSIGNMENT_REQUIRED" || !t.assignments?.length) && 
-         t.status !== "RESOLVED" && 
-         t.status !== "ON_HOLD" && 
-         t.status !== "VERIFIED"
+    t => (t.status === "MANUAL_ASSIGNMENT_REQUIRED" || !t.assignments?.length) &&
+      t.status !== "RESOLVED" &&
+      t.status !== "ON_HOLD" &&
+      t.status !== "VERIFIED"
   ).length;
 
   // Average Turnaround Time (in Hours)
@@ -363,31 +363,33 @@ export function Dashboard({ user: userProp }: { user?: any }) {
       </div>
 
       {/* Global State & Engineer Dropdown Filters */}
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
-        <select
-          value={selectedState}
-          onChange={(e) => setSelectedState(e.target.value)}
-          className="form-input"
-          style={{ fontSize: "0.85rem", fontWeight: "600" }}
-        >
-          <option value="ALL">All States ({statesList.length})</option>
-          {statesList.map(st => (
-            <option key={st} value={st}>{st}</option>
-          ))}
-        </select>
+      {activeTab !== "engineers" && (
+        <div style={{ display: "flex", gap: "1rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+          <select
+            value={selectedState}
+            onChange={(e) => setSelectedState(e.target.value)}
+            className="form-input"
+            style={{ fontSize: "0.85rem", fontWeight: "600" }}
+          >
+            <option value="ALL">All States ({statesList.length})</option>
+            {statesList.map(st => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
 
-        <select
-          value={selectedEngineer}
-          onChange={(e) => setSelectedEngineer(e.target.value)}
-          className="form-input"
-          style={{ fontSize: "0.85rem", fontWeight: "600" }}
-        >
-          <option value="ALL">All Field Engineers ({engineers.length})</option>
-          {engineers.map(eng => (
-            <option key={eng.id} value={eng.id}>{eng.name}</option>
-          ))}
-        </select>
-      </div>
+          <select
+            value={selectedEngineer}
+            onChange={(e) => setSelectedEngineer(e.target.value)}
+            className="form-input"
+            style={{ fontSize: "0.85rem", fontWeight: "600" }}
+          >
+            <option value="ALL">All Field Engineers ({engineers.length})</option>
+            {engineers.map(eng => (
+              <option key={eng.id} value={eng.id}>{eng.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* TAB 1: OPERATIONS OVERVIEW (MATCHING SCREENSHOTS EXACTLY) */}
@@ -757,10 +759,10 @@ export function Dashboard({ user: userProp }: { user?: any }) {
                           <td style={{ padding: "0.55rem 0.6rem", fontFamily: "monospace", color: "#64748B", whiteSpace: "nowrap" }}>{t.complaint?.applicationId || "N/A"}</td>
                           <td style={{ padding: "0.55rem 0.6rem", color: "#334155", whiteSpace: "nowrap" }}>{loc}</td>
                           <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", whiteSpace: "nowrap" }}>
-                            <span style={{ 
-                              fontSize: "0.68rem", 
-                              fontWeight: "800", 
-                              color: priorityStr === "CRITICAL" ? "#DC2626" : priorityStr === "URGENT" ? "#D97706" : "#2563EB" 
+                            <span style={{
+                              fontSize: "0.68rem",
+                              fontWeight: "800",
+                              color: priorityStr === "CRITICAL" ? "#DC2626" : priorityStr === "URGENT" ? "#D97706" : "#2563EB"
                             }}>
                               {priorityStr}
                             </span>
@@ -809,7 +811,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
                     >
                       Previous
                     </button>
-                    
+
                     {getPageNumbers().map((p, idx) => {
                       if (p === "...") {
                         return (
