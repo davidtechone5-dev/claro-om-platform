@@ -58,7 +58,7 @@ function App() {
   useEffect(() => {
     if (!token) return;
 
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: any;
     const TIMEOUT_DURATION = 12 * 60 * 1000; // 12 minutes
 
     const resetTimer = () => {
