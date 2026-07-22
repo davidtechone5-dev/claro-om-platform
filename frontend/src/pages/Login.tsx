@@ -31,11 +31,7 @@ export function Login({ onLoginSuccess }: LoginProps) {
     }
   };
 
-  const handleQuickFill = () => {
-    setEmail("admin@claro.com");
-    setPassword("admin123");
-    setError(null);
-  };
+
 
   return (
     <div style={styles.container}>
@@ -106,17 +102,6 @@ export function Login({ onLoginSuccess }: LoginProps) {
             {loading ? "Verifying Credentials..." : "Authenticate Securely"}
           </button>
         </form>
-
-        <div style={styles.quickFillContainer}>
-          <button
-            type="button"
-            onClick={handleQuickFill}
-            style={styles.quickBtn}
-            disabled={loading}
-          >
-            Fill System Admin Demo Credentials
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -212,20 +197,5 @@ const styles = {
     fontSize: "0.82rem",
     color: "#DC2626",
     fontWeight: "600"
-  },
-  quickFillContainer: {
-    marginTop: "1.75rem",
-    borderTop: "1px solid #E2E8F0",
-    paddingTop: "1.25rem",
-    textAlign: "center" as const
-  },
-  quickBtn: {
-    backgroundColor: "transparent",
-    border: "none",
-    color: "#E52320",
-    fontSize: "0.8rem",
-    fontWeight: "700",
-    cursor: "pointer",
-    textDecoration: "underline"
   }
 };

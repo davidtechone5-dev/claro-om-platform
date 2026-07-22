@@ -54,6 +54,37 @@ function App() {
     localStorage.removeItem("claro_user");
   };
 
+  // 12-Minute Inactivity Idle Timeout
+  useEffect(() => {
+    if (!token) return;
+
+    let timeoutId: NodeJS.Timeout;
+    const TIMEOUT_DURATION = 12 * 60 * 1000; // 12 minutes
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handleLogout();
+        alert("You have been logged out automatically due to 12 minutes of inactivity.");
+      }, TIMEOUT_DURATION);
+    };
+
+    const events = ["mousedown", "mousemove", "keypress", "scroll", "touchstart"];
+    
+    events.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    resetTimer();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [token]);
+
   if (!token || !user) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
