@@ -3,17 +3,10 @@ import { api } from "../utils/api";
 import { DonutChart, DualLineChart } from "../components/Charts";
 import { EngineersOverview } from "./EngineersOverview";
 import {
-  CheckCircle,
-  Clock,
   AlertTriangle,
   UserCheck,
   FileText,
-  MapPin,
-  TrendingUp,
-  Filter,
   BarChart2,
-  Calendar,
-  Layers,
   History
 } from "lucide-react";
 
@@ -107,12 +100,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
   const openTickets = filteredTickets.filter(t => t && t.status !== "RESOLVED");
   const pendingCount = openTickets.length;
 
-  const withinSlaCount = openTickets.filter(t => getDaysOpen(t?.createdAt) < 3).length;
-  const nearingSlaCount = openTickets.filter(t => {
-    const d = getDaysOpen(t?.createdAt);
-    return d >= 3 && d <= 7;
-  }).length;
-  const breachedSlaCount = openTickets.filter(t => getDaysOpen(t?.createdAt) > 7).length;
+
   const onHoldCount = filteredTickets.filter(t => t.status === "ON_HOLD").length;
 
   const criticalUrgentCount = filteredTickets.filter(

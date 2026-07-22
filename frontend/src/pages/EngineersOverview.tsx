@@ -9,12 +9,7 @@ import {
   Search, 
   FileText,
   AlertCircle,
-  MapPin,
-  Trophy,
-  BarChart2,
-  TrendingUp,
-  Clock,
-  Users
+  MapPin
 } from "lucide-react";
 
 export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "dashboard" }) {
@@ -24,7 +19,7 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
   const [data, setData] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedState, setSelectedState] = useState<string>("ALL");
-  const [viewTab, setViewTab] = useState<"analysis" | "stages">(mode === "dashboard" ? "analysis" : "stages");
+  const viewTab = mode === "dashboard" ? "analysis" : "stages";
 
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
