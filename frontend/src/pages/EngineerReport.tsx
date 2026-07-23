@@ -17,6 +17,22 @@ export function EngineerReport() {
   const startDate = searchParams.get("startDate") || "";
   const endDate = searchParams.get("endDate") || "";
 
+  const getFilterLabel = () => {
+    if (!startDate && !endDate) return "All Time";
+    const formatDate = (dateStr: string) => {
+      if (!dateStr) return "";
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+    };
+    const startStr = formatDate(startDate);
+    const endStr = formatDate(endDate);
+    if (startStr && endStr) return `${startStr} – ${endStr}`;
+    if (startStr) return `From ${startStr}`;
+    if (endStr) return `To ${endStr}`;
+    return "Filtered";
+  };
+
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -195,9 +211,38 @@ export function EngineerReport() {
           </div>
         </div>
 
+        {/* Section 1: Engineer Profile & Contact Details */}
+        <div style={styles.section}>
+          <h2 style={styles.sectionHeader}>1. Engineer Profile & Contact Details</h2>
+          <div style={styles.bioGrid}>
+            <div style={styles.bioCell}>
+              <span style={styles.bioLabel}>Engineer Name:</span>
+              <span style={styles.bioVal}>{engineer.name}</span>
+            </div>
+            <div style={styles.bioCell}>
+              <span style={styles.bioLabel}>Contact Number:</span>
+              <span style={styles.bioVal}>{engineer.phone || "N/A"}</span>
+            </div>
+            <div style={styles.bioCell}>
+              <span style={styles.bioLabel}>Email Address:</span>
+              <span style={styles.bioVal}>{engineer.email}</span>
+            </div>
+            <div style={styles.bioCell}>
+              <span style={styles.bioLabel}>Deployed State & District:</span>
+              <span style={styles.bioVal}>
+                {engineer.state || "N/A"} (District: {engineer.district || "N/A"})
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* Scorecard KPIs Section */}
         <div style={styles.section}>
           <h2 style={styles.sectionHeader}>2. Operational Metrics & Performance Score</h2>
+          <div style={{ fontSize: "0.85rem", color: "#64748b", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <Calendar size={14} color="var(--primary)" />
+            <span>Reporting Window: <strong style={{ color: "#0f172a" }}>{getFilterLabel()}</strong></span>
+          </div>
           
           <div style={styles.kpiTableWrapper}>
             <table style={styles.kpiTable}>
@@ -211,16 +256,34 @@ export function EngineerReport() {
               </thead>
               <tbody>
                 <tr>
-                  <td style={styles.kpiTd}>Total Assigned Tasks</td>
+                  <td style={styles.kpiTd}>All-Time Assigned Tasks</td>
                   <td style={styles.kpiTd}>--</td>
-                  <td style={{ ...styles.kpiTd, fontWeight: "600" }}>{metrics.totalTickets}</td>
-                  <td style={styles.kpiTd}>Cumulative caseload</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600" }}>{metrics.allTimeAssigned ?? metrics.totalTickets}</td>
+                  <td style={styles.kpiTd}>Total cumulative caseload</td>
                 </tr>
                 <tr>
-                  <td style={styles.kpiTd}>Resolved Closed Cases</td>
+                  <td style={styles.kpiTd}>All-Time Resolved Cases</td>
+                  <td style={styles.kpiTd}>Maximize</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "var(--color-resolved)" }}>{metrics.allTimeResolved ?? metrics.totalResolved}</td>
+                  <td style={styles.kpiTd}>Total marked fully resolved</td>
+                </tr>
+                <tr>
+                  <td style={styles.kpiTd}>
+                    <div>Assigned Tasks (in Period)</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
+                  </td>
+                  <td style={styles.kpiTd}>--</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600" }}>{metrics.totalTickets}</td>
+                  <td style={styles.kpiTd}>Period assigned caseload</td>
+                </tr>
+                <tr>
+                  <td style={styles.kpiTd}>
+                    <div>Resolved Cases (in Period)</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
+                  </td>
                   <td style={styles.kpiTd}>Maximize</td>
                   <td style={{ ...styles.kpiTd, fontWeight: "600", color: "var(--color-resolved)" }}>{metrics.totalResolved}</td>
-                  <td style={styles.kpiTd}>Marked fully resolved</td>
+                  <td style={styles.kpiTd}>Period marked fully resolved</td>
                 </tr>
                 <tr>
                   <td style={styles.kpiTd}>Active Backlog Queue</td>

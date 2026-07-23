@@ -54,6 +54,18 @@ const getAssignmentDateTime = (t: any): Date | null => {
   return Number.isNaN(result.getTime()) ? null : result;
 };
 
+const startOfDay = (date: Date): Date => {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+};
+
+const endOfDay = (date: Date): Date => {
+  const value = new Date(date);
+  value.setHours(23, 59, 59, 999);
+  return value;
+};
+
 export const ticketController = {
   /**
    * List tickets with pagination & filters (e.g., status, priority)
@@ -416,36 +428,75 @@ export const ticketController = {
         }
       });
 
+      const getResolutionDate = (ticket: any): Date | null => {
+        if (ticket.status !== "RESOLVED") return null;
+        if (ticket.serviceReports?.[0]?.reportDate) return new Date(ticket.serviceReports[0].reportDate);
+        return ticket.updatedAt ? new Date(ticket.updatedAt) : null;
+      };
+
+      const getVisitDate = (ticket: any): Date | null => {
+        if (ticket.initialVisits?.[0]?.visitDate) return new Date(ticket.initialVisits[0].visitDate);
+        return null;
+      };
+
       const allTickets = assignments.map(a => ({
         ...a.ticket,
-        assignedAt: a.assignedAt || a.ticket.createdAt
+        assignedAt: a.assignedAt || a.ticket.createdAt,
+        resolutionDate: getResolutionDate(a.ticket),
+        visitDate: getVisitDate(a.ticket)
       }));
 
-      // Filter tickets assigned in date range if specified (anchored on assignedAt)
+      const periodStart = startFilter ? startOfDay(startFilter) : new Date(0);
+      const periodEnd = endFilter ? endOfDay(endFilter) : (() => {
+        const d = new Date();
+        d.setFullYear(d.getFullYear() + 100);
+        return d;
+      })();
+
       const tickets = allTickets.filter(t => {
-        if (!startFilter && !endFilter) return true;
         const assignedTime = new Date(t.assignedAt).getTime();
-        if (startFilter && assignedTime < startFilter.getTime()) return false;
-        if (endFilter && assignedTime > endFilter.getTime()) return false;
-        return true;
+        return assignedTime >= periodStart.getTime() && assignedTime <= periodEnd.getTime();
       });
 
       const totalTickets = tickets.length;
-      
-      // Filter resolved tickets
-      const resolvedTickets = tickets.filter(t => t.status === "RESOLVED");
-      const totalResolved = resolvedTickets.length;
-      const activeTickets = totalTickets - totalResolved;
-      const resolutionRate = totalTickets > 0 ? Math.round((totalResolved / totalTickets) * 100) : 0;
 
-      // Count initial visits done by this engineer in the date range
-      const visitWhere: any = { engineerId: id, deletedAt: null };
-      if (startFilter || endFilter) {
-        visitWhere.visitDate = {};
-        if (startFilter) visitWhere.visitDate.gte = startFilter;
-        if (endFilter) visitWhere.visitDate.lte = endFilter;
-      }
-      const visitsDone = await prisma.initialVisit.count({ where: visitWhere });
+      const resolvedTickets = allTickets.filter((ticket) => {
+        if (!ticket.resolutionDate) return false;
+        const resolutionDate = new Date(ticket.resolutionDate);
+        if (Number.isNaN(resolutionDate.getTime())) return false;
+        return (
+          resolutionDate.getTime() >= periodStart.getTime() &&
+          resolutionDate.getTime() <= periodEnd.getTime()
+        );
+      });
+      const totalResolved = resolvedTickets.length;
+
+      const activeTickets = allTickets.filter(t => t.status !== "RESOLVED").length;
+      const allTimeAssigned = allTickets.length;
+      const allTimeResolved = allTickets.filter(t => t.status === "RESOLVED").length;
+      const resolutionRate = allTimeAssigned > 0 ? Math.round((allTimeResolved / allTimeAssigned) * 100) : 0;
+
+      const visitsDone = allTickets.filter((ticket) => {
+        if (!ticket.visitDate) return false;
+
+        const visitDate = new Date(ticket.visitDate);
+
+        if (Number.isNaN(visitDate.getTime())) return false;
+
+        const visitWasInPeriod =
+          visitDate.getTime() >= periodStart.getTime() &&
+          visitDate.getTime() <= periodEnd.getTime();
+
+        if (!visitWasInPeriod) return false;
+
+        if (!ticket.resolutionDate) return true;
+
+        const resolutionDate = new Date(ticket.resolutionDate);
+
+        if (Number.isNaN(resolutionDate.getTime())) return true;
+
+        return resolutionDate.getTime() > periodEnd.getTime();
+      }).length;
 
       // Calculate Average Turn-Around-Time (TAT) in days (preferring Google Sheet "Overall TAT (days)")
       let tatSum = 0;
@@ -530,6 +581,8 @@ export const ticketController = {
         metrics: {
           totalTickets,
           totalAssigned: totalTickets,
+          allTimeAssigned: allTickets.length,
+          allTimeResolved: allTickets.filter(t => t.status === "RESOLVED").length,
           visitsDone,
           totalResolved,
           activeTickets,
@@ -590,7 +643,7 @@ export const ticketController = {
         if (p.length === 3) startFilter = new Date(p[0], p[1] - 1, p[2], 0, 0, 0, 0);
         else startFilter = new Date(startDate.toString());
       } else {
-        startFilter = new Date(2026, 6, 1, 0, 0, 0, 0);
+        startFilter = new Date(0);
       }
 
       if (endDate) {
@@ -598,8 +651,13 @@ export const ticketController = {
         if (p.length === 3) endFilter = new Date(p[0], p[1] - 1, p[2], 23, 59, 59, 999);
         else endFilter = new Date(endDate.toString());
       } else {
-        endFilter = new Date(2026, 6, 15, 23, 59, 59, 999);
+        const d = new Date();
+        d.setFullYear(d.getFullYear() + 100);
+        endFilter = d;
       }
+
+      const periodStart = startOfDay(startFilter);
+      const periodEnd = endOfDay(endFilter);
 
       const beforeDate = new Date(startFilter);
       beforeDate.setDate(beforeDate.getDate() - 27);
@@ -722,35 +780,59 @@ export const ticketController = {
           // Date window filtered tickets for assignment
           const windowTickets = allTickets.filter(t => {
             const time = t.assignedAt ? new Date(t.assignedAt).getTime() : (t.createdAt ? new Date(t.createdAt).getTime() : 0);
-            return time >= startFilter.getTime() && time <= endFilter.getTime();
+            return time >= periodStart.getTime() && time <= periodEnd.getTime();
           });
 
-          const targetTickets = (startDate || endDate) ? windowTickets : allTickets;
+          const targetTickets = windowTickets;
 
           const allCount = targetTickets.length;
           const receivedCount = targetTickets.filter(t => t.status === "RECEIVED").length;
           const assignedCount = targetTickets.filter(t => t.status === "ASSIGNED").length;
           const materialReqCount = targetTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
           const insuranceCount = targetTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
-          const manualAssignCount = targetTickets.filter(t => t.status === "MANUAL_ASSIGNMENT_REQUIRED").length;
+          const manualAssignCount = targetTickets.filter(t => {
+            if (t.metadata && typeof t.metadata === "object") {
+              const meta = t.metadata as Record<string, any>;
+              const method = meta["Assignment Method"] ?? meta["assignment_method"];
+              return String(method || "").trim().toLowerCase() === "manual";
+            }
+            return false;
+          }).length;
 
-          // Resolved Count calculated based on Service Report Submission Date (irrespective of complaint date)
-          const resolvedCount = (startDate || endDate)
-            ? allTickets.filter(t => {
-                if (t.status !== "RESOLVED" || !t.resolutionDate) return false;
-                const time = t.resolutionDate.getTime();
-                return time >= startFilter.getTime() && time <= endFilter.getTime();
-              }).length
-            : allTickets.filter(t => t.status === "RESOLVED").length;
+          const visitedCount = allTickets.filter((ticket) => {
+            if (!ticket.visitDate) return false;
 
-          // Visits Count calculated based on Initial Visit Date (irrespective of complaint date)
-          const visitedCount = (startDate || endDate)
-            ? allTickets.filter(t => {
-                if (!t.visitDate) return false;
-                const time = t.visitDate.getTime();
-                return time >= startFilter.getTime() && time <= endFilter.getTime();
-              }).length
-            : allTickets.filter(t => t.initialVisits?.length > 0 || t.status === "INITIAL_VISIT_COMPLETED").length;
+            const visitDate = new Date(ticket.visitDate);
+
+            if (Number.isNaN(visitDate.getTime())) return false;
+
+            const visitWasInPeriod =
+              visitDate.getTime() >= periodStart.getTime() &&
+              visitDate.getTime() <= periodEnd.getTime();
+
+            if (!visitWasInPeriod) return false;
+
+            if (!ticket.resolutionDate) return true;
+
+            const resolutionDate = new Date(ticket.resolutionDate);
+
+            if (Number.isNaN(resolutionDate.getTime())) return true;
+
+            return resolutionDate.getTime() > periodEnd.getTime();
+          }).length;
+
+          const resolvedCount = allTickets.filter((ticket) => {
+            if (!ticket.resolutionDate) return false;
+
+            const resolutionDate = new Date(ticket.resolutionDate);
+
+            if (Number.isNaN(resolutionDate.getTime())) return false;
+
+            return (
+              resolutionDate.getTime() >= periodStart.getTime() &&
+              resolutionDate.getTime() <= periodEnd.getTime()
+            );
+          }).length;
 
            // Calculate average TAT for resolved tickets (preferring Google Sheet "Overall TAT (days)")
            let tatSum = 0;
@@ -798,7 +880,7 @@ export const ticketController = {
             manualAssignCount,
             totalAssigned,
             totalResolved,
-            avgTat: `${avgTatNum}d`,
+            avgTat: `${avgTatNum} Days`,
             avgTatNum,
             assignedInWindow,
             resolvedInWindow
@@ -828,7 +910,7 @@ export const ticketController = {
           existing.assignedInWindow += item.assignedInWindow;
           existing.resolvedInWindow += item.resolvedInWindow;
           existing.avgTatNum = parseFloat(((existing.avgTatNum + item.avgTatNum) / 2).toFixed(1));
-          existing.avgTat = `${existing.avgTatNum}d`;
+          existing.avgTat = `${existing.avgTatNum} Days`;
         }
       });
 

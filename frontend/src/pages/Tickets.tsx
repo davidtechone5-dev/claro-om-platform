@@ -73,6 +73,7 @@ export function Tickets() {
     { key: "MATERIAL_REQUESTED", label: "Material Req" },
     { key: "INSURANCE_SUBMITTED", label: "Insurance" },
     { key: "ON_HOLD", label: "On Hold" },
+    { key: "OUT_OF_SCOPE", label: "Out of Scope" },
     { key: "RESOLVED", label: "Resolved" },
     { key: "MANUAL_ASSIGNMENT_REQUIRED", label: "Manual Assign" }
   ];

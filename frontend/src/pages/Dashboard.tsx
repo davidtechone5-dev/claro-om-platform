@@ -108,15 +108,19 @@ export function Dashboard({ user: userProp }: { user?: any }) {
 
 
   const onHoldCount = filteredTickets.filter(t => t.status === "ON_HOLD").length;
+  const outOfScopeCount = filteredTickets.filter(t => t.status === "OUT_OF_SCOPE").length;
 
   const criticalUrgentCount = filteredTickets.filter(
-    t => (t.priority === "CRITICAL" || t.priority === "URGENT") && t.status !== "RESOLVED"
+    t => (t.priority === "CRITICAL" || t.priority === "URGENT") && 
+      t.status !== "RESOLVED" &&
+      t.status !== "OUT_OF_SCOPE"
   ).length;
 
   const needsAssignCount = filteredTickets.filter(
     t => (t.status === "MANUAL_ASSIGNMENT_REQUIRED" || !t.assignments?.length) &&
       t.status !== "RESOLVED" &&
       t.status !== "ON_HOLD" &&
+      t.status !== "OUT_OF_SCOPE" &&
       t.status !== "VERIFIED"
   ).length;
 
@@ -149,6 +153,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
       MATERIAL_REQUESTED: "Material Requested",
       INSURANCE_SUBMITTED: "Insurance Submitted",
       ON_HOLD: "On Hold",
+      OUT_OF_SCOPE: "Out of Scope",
       VERIFIED: "Verified",
       RESOLVED: "Resolved / Closed",
       REMOTELY_RESOLVED: "Remotely Resolved",
@@ -165,6 +170,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
       MATERIAL_REQUESTED: "#F59E0B",
       INSURANCE_SUBMITTED: "#8B5CF6",
       ON_HOLD: "#64748B",
+      OUT_OF_SCOPE: "#475569",
       VERIFIED: "#06B6D4",
       RESOLVED: "#10B981",
       REMOTELY_RESOLVED: "#8B5CF6",
@@ -317,6 +323,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
     { label: "Mat Requested", count: matReqCount, color: "#D97706" },
     { label: "Insurance Moved", count: insuranceCount, color: "#9333EA" },
     { label: "On Hold", count: onHoldCount, color: "#64748B" },
+    { label: "Out of Scope", count: outOfScopeCount, color: "#475569" },
     { label: "Verified", count: verifiedCount, color: "#0891B2" },
     { label: "Resolved", count: resolvedCount, color: "#059669" }
   ];
@@ -329,6 +336,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
     { name: "Mat Req", value: matReqCount, color: "#D97706" },
     { name: "Insurance", value: insuranceCount, color: "#9333EA" },
     { name: "On Hold", value: onHoldCount, color: "#64748B" },
+    { name: "Out of Scope", value: outOfScopeCount, color: "#475569" },
     { name: "Verified", value: verifiedCount, color: "#0891B2" },
     { name: "Resolved", value: resolvedCount, color: "#059669" }
   ];
@@ -450,6 +458,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
                   <div style={styles.kpiCardLabel}>TOTAL TICKETS</div>
                   <div style={{ ...styles.kpiCardVal, color: "#DC2626" }}>{totalCount}</div>
                   <div style={styles.kpiCardSub}>All time</div>
+                  <div style={styles.kpiCardSub}>{outOfScopeCount} out of scope</div>
                 </div>
                 <div className="kpi-card-icon-wrapper">
                   <BarChart2 size={22} />
