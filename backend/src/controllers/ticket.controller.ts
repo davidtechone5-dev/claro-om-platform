@@ -76,22 +76,7 @@ export const ticketController = {
 
     const whereClause: any = { deletedAt: null };
     if (status && status.toString() !== "ALL") {
-      const s = status.toString();
-      if (s === "INITIAL_VISIT_COMPLETED") {
-        whereClause.status = { not: "RESOLVED" };
-        whereClause.OR = [
-          { status: "INITIAL_VISIT_COMPLETED" },
-          { initialVisits: { some: { deletedAt: null } } }
-        ];
-      } else if (s === "MANUAL_ASSIGNMENT_REQUIRED") {
-        whereClause.OR = [
-          { status: "MANUAL_ASSIGNMENT_REQUIRED" },
-          { assignments: { none: { deletedAt: null } } }
-        ];
-        whereClause.status = { notIn: ["RESOLVED", "CLOSED", "ARCHIVED"] };
-      } else {
-        whereClause.status = s;
-      }
+      whereClause.status = status.toString();
     }
     if (priority) {
       whereClause.priority = priority.toString();
@@ -489,6 +474,18 @@ export const ticketController = {
         );
       }).length;
 
+      const assignedCount = tickets.filter(t => t.status === "ASSIGNED").length;
+      const materialReqCount = tickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
+      const insuranceCount = tickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
+      const manualAssignCount = tickets.filter(t => {
+        if (t.metadata && typeof t.metadata === "object") {
+          const meta = t.metadata as Record<string, any>;
+          const method = meta["Assignment Method"] ?? meta["assignment_method"];
+          return String(method || "").trim().toLowerCase() === "manual";
+        }
+        return false;
+      }).length;
+
       // Calculate Average Turn-Around-Time (TAT) in days (preferring Google Sheet "Overall TAT (days)")
       let tatSum = 0;
       let validTatCount = 0;
@@ -581,13 +578,17 @@ export const ticketController = {
           avgTat,
           slaBreachedCount,
           materialRequestsCount,
-          performanceScore
+          performanceScore,
+          assignedCount,
+          materialReqCount,
+          insuranceCount,
+          manualAssignCount
         },
         distributions: {
           status: statusDistribution,
           priority: priorityDistribution
         },
-        tickets: tickets.map(t => {
+        tickets: allTickets.map(t => {
           const assignTime = new Date(t.assignedAt).getTime();
           const resTime = t.serviceReports?.[0]?.reportDate 
             ? new Date(t.serviceReports[0].reportDate).getTime() 
@@ -603,6 +604,12 @@ export const ticketController = {
             createdAt: t.createdAt,
             initialVisitDate: t.initialVisits?.[0]?.visitDate || null,
             serviceReportDate: t.serviceReports?.[0]?.reportDate || null,
+            resolvedAt: t.serviceReports?.[0]?.reportDate || (t.status === "RESOLVED" ? t.updatedAt : null),
+            materialRequestedAt: t.status === "MATERIAL_REQUESTED" ? t.assignedAt : null,
+            materialRequestDate: t.status === "MATERIAL_REQUESTED" ? t.assignedAt : null,
+            materialStatusDate: t.status === "MATERIAL_REQUESTED" ? t.assignedAt : null,
+            insuranceSubmittedAt: (t.status === "INSURANCE_MOVED" || t.status === "INSURANCE_SUBMITTED") ? t.assignedAt : null,
+            insuranceDate: (t.status === "INSURANCE_MOVED" || t.status === "INSURANCE_SUBMITTED") ? t.assignedAt : null,
             tatDays,
             complaint: t.complaint ? {
               applicationId: t.complaint.applicationId,

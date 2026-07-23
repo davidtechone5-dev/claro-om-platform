@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
-import { 
-  ArrowLeft, 
-  Printer, 
-  FileText, 
+import {
+  ArrowLeft,
+  Printer,
+  FileText,
   AlertCircle,
   Calendar
 } from "lucide-react";
@@ -13,7 +13,7 @@ export function EngineerReport() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  
+
   const startDate = searchParams.get("startDate") || "";
   const endDate = searchParams.get("endDate") || "";
 
@@ -77,6 +77,118 @@ export function EngineerReport() {
   }
 
   const { engineer, metrics, tickets } = data;
+  type ReportTab =
+    | "ALL"
+    | "ASSIGNED"
+    | "VISITED"
+    | "MATERIAL_REQUESTED"
+    | "INSURANCE_SUBMITTED"
+    | "RESOLVED"
+    | "MANUAL_ASSIGNMENT_REQUIRED";
+
+  const isDateInRange = (
+    dateValue: string | null | undefined,
+    start: string,
+    end: string
+  ) => {
+    if (!dateValue) return false;
+
+    const date = new Date(dateValue);
+
+    if (Number.isNaN(date.getTime())) {
+      return false;
+    }
+
+    if (start) {
+      const startBoundary = new Date(`${start}T00:00:00`);
+      if (date < startBoundary) return false;
+    }
+
+    if (end) {
+      const endBoundary = new Date(`${end}T23:59:59.999`);
+      if (date > endBoundary) return false;
+    }
+
+    return true;
+  };
+
+  const getTicketsForTab = (tab: ReportTab) => {
+    switch (tab) {
+      case "ASSIGNED":
+        return tickets.filter((ticket: any) =>
+          isDateInRange(ticket.assignedAt, startDate, endDate)
+        );
+
+      case "VISITED":
+        return tickets.filter((ticket: any) =>
+          isDateInRange(ticket.initialVisitDate, startDate, endDate)
+        );
+
+      case "MATERIAL_REQUESTED":
+        return tickets.filter((ticket: any) =>
+          isDateInRange(
+            ticket.materialRequestedAt ??
+            ticket.materialRequestDate ??
+            ticket.materialStatusDate,
+            startDate,
+            endDate
+          )
+        );
+
+      case "INSURANCE_SUBMITTED":
+        return tickets.filter((ticket: any) =>
+          isDateInRange(
+            ticket.insuranceSubmittedAt ??
+            ticket.insuranceDate,
+            startDate,
+            endDate
+          )
+        );
+
+      case "RESOLVED":
+        return tickets.filter((ticket: any) =>
+          isDateInRange(
+            ticket.resolvedAt ??
+            ticket.serviceReportDate,
+            startDate,
+            endDate
+          )
+        );
+
+      case "MANUAL_ASSIGNMENT_REQUIRED":
+        return tickets.filter((ticket: any) => {
+          const isManualAssignment =
+            ticket.isManualAssignment === true ||
+            ticket.manualAssignmentRequired === true ||
+            ticket.assignmentType === "MANUAL" ||
+            ticket.status === "MANUAL_ASSIGNMENT_REQUIRED";
+
+          return (
+            isManualAssignment &&
+            isDateInRange(
+              ticket.manualAssignedAt ??
+              ticket.manualAssignmentDate ??
+              ticket.assignedAt,
+              startDate,
+              endDate
+            )
+          );
+        });
+
+      case "ALL":
+      default:
+        return tickets;
+    }
+  };
+
+  const displayedTickets = getTicketsForTab(
+    selectedStatusTab as ReportTab
+  );
+
+  console.log("Metrics:", metrics);
+  console.log("All returned tickets:", tickets.length);
+  console.log("Visited tickets:", getTicketsForTab("VISITED").length);
+  console.log("Resolved tickets:", getTicketsForTab("RESOLVED").length);
   const ratingLevel = metrics.performanceScore >= 90 ? "Excellent" : metrics.performanceScore >= 80 ? "Satisfactory" : "Under Watch / Action Required";
   const ratingColor = metrics.performanceScore >= 90 ? "var(--color-resolved)" : metrics.performanceScore >= 80 ? "var(--primary)" : "var(--color-manual)";
 
@@ -141,12 +253,12 @@ export function EngineerReport() {
           <button onClick={() => navigate("/engineers/overview")} className="btn-secondary" style={styles.controlBtn}>
             <ArrowLeft size={16} /> Engineers Overview
           </button>
-          
+
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", backgroundColor: "#fff", padding: "0.3rem 0.6rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}>
             <Calendar size={14} color="var(--primary)" />
-            <input 
-              type="date" 
-              value={startDate} 
+            <input
+              type="date"
+              value={startDate}
               onChange={(e) => {
                 const p = new URLSearchParams(searchParams);
                 if (e.target.value) p.set("startDate", e.target.value);
@@ -156,9 +268,9 @@ export function EngineerReport() {
               style={{ border: "none", fontSize: "0.78rem", color: "#1e293b" }}
             />
             <span style={{ fontSize: "0.75rem", color: "#64748b" }}>to</span>
-            <input 
-              type="date" 
-              value={endDate} 
+            <input
+              type="date"
+              value={endDate}
               onChange={(e) => {
                 const p = new URLSearchParams(searchParams);
                 if (e.target.value) p.set("endDate", e.target.value);
@@ -168,6 +280,34 @@ export function EngineerReport() {
               style={{ border: "none", fontSize: "0.78rem", color: "#1e293b" }}
             />
           </div>
+
+          {(startDate || endDate) && (
+            <button 
+              onClick={() => {
+                const p = new URLSearchParams(searchParams);
+                p.delete("startDate");
+                p.delete("endDate");
+                setSearchParams(p);
+              }} 
+              style={{
+                padding: "0.3rem 0.6rem",
+                fontSize: "0.75rem",
+                fontWeight: "600",
+                color: "#ef4444",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fca5a5",
+                borderRadius: "6px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.25rem",
+                height: "100%"
+              }}
+              className="no-print"
+            >
+              Clear Filter
+            </button>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -243,7 +383,7 @@ export function EngineerReport() {
             <Calendar size={14} color="var(--primary)" />
             <span>Reporting Window: <strong style={{ color: "#0f172a" }}>{getFilterLabel()}</strong></span>
           </div>
-          
+
           <div style={styles.kpiTableWrapper}>
             <table style={styles.kpiTable}>
               <thead>
@@ -264,26 +404,71 @@ export function EngineerReport() {
                 <tr>
                   <td style={styles.kpiTd}>All-Time Resolved Cases</td>
                   <td style={styles.kpiTd}>Maximize</td>
-                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "var(--color-resolved)" }}>{metrics.allTimeResolved ?? metrics.totalResolved}</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "#047857" }}>{metrics.allTimeResolved ?? metrics.totalResolved}</td>
                   <td style={styles.kpiTd}>Total marked fully resolved</td>
                 </tr>
                 <tr>
                   <td style={styles.kpiTd}>
-                    <div>Assigned Tasks (in Period)</div>
+                    <div>Total Tickets (in Period)</div>
                     <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
                   </td>
                   <td style={styles.kpiTd}>--</td>
                   <td style={{ ...styles.kpiTd, fontWeight: "600" }}>{metrics.totalTickets}</td>
-                  <td style={styles.kpiTd}>Period assigned caseload</td>
+                  <td style={styles.kpiTd}>Period total workload</td>
                 </tr>
                 <tr>
                   <td style={styles.kpiTd}>
-                    <div>Resolved Cases (in Period)</div>
+                    <div>Assigned (in Period)</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
+                  </td>
+                  <td style={styles.kpiTd}>--</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "#1D4ED8" }}>{metrics.assignedCount ?? 0}</td>
+                  <td style={styles.kpiTd}>Period marked active/assigned</td>
+                </tr>
+                <tr>
+                  <td style={styles.kpiTd}>
+                    <div>Visited (in Period)</div>
                     <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
                   </td>
                   <td style={styles.kpiTd}>Maximize</td>
-                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "var(--color-resolved)" }}>{metrics.totalResolved}</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "#047857" }}>{metrics.visitsDone ?? 0}</td>
+                  <td style={styles.kpiTd}>Period initial visits done</td>
+                </tr>
+                <tr>
+                  <td style={styles.kpiTd}>
+                    <div>Material Req (in Period)</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
+                  </td>
+                  <td style={styles.kpiTd}>--</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "#B45309" }}>{metrics.materialReqCount ?? 0}</td>
+                  <td style={styles.kpiTd}>Period awaiting materials</td>
+                </tr>
+                <tr>
+                  <td style={styles.kpiTd}>
+                    <div>Insurance (in Period)</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
+                  </td>
+                  <td style={styles.kpiTd}>--</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "#6B21A8" }}>{metrics.insuranceCount ?? 0}</td>
+                  <td style={styles.kpiTd}>Period insurance claims moved</td>
+                </tr>
+                <tr>
+                  <td style={styles.kpiTd}>
+                    <div>Resolved (in Period)</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
+                  </td>
+                  <td style={styles.kpiTd}>Maximize</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "#047857" }}>{metrics.totalResolved}</td>
                   <td style={styles.kpiTd}>Period marked fully resolved</td>
+                </tr>
+                <tr>
+                  <td style={styles.kpiTd}>
+                    <div>Manual Assign (in Period)</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>({getFilterLabel()})</div>
+                  </td>
+                  <td style={styles.kpiTd}>--</td>
+                  <td style={{ ...styles.kpiTd, fontWeight: "600", color: "#B91C1C" }}>{metrics.manualAssignCount ?? 0}</td>
+                  <td style={styles.kpiTd}>Period manually allocated</td>
                 </tr>
                 <tr>
                   <td style={styles.kpiTd}>Active Backlog Queue</td>
@@ -295,10 +480,10 @@ export function EngineerReport() {
                   <td style={styles.kpiTd}>Resolution Rate (%)</td>
                   <td style={styles.kpiTd}>&gt; 80%</td>
                   <td style={{ ...styles.kpiTd, fontWeight: "600", color: "var(--primary)" }}>{metrics.resolutionRate}%</td>
-                  <td style={{ 
-                    ...styles.kpiTd, 
-                    fontWeight: "600", 
-                    color: metrics.resolutionRate >= 80 ? "var(--color-resolved)" : "var(--color-manual)" 
+                  <td style={{
+                    ...styles.kpiTd,
+                    fontWeight: "600",
+                    color: metrics.resolutionRate >= 80 ? "var(--color-resolved)" : "var(--color-manual)"
                   }}>
                     {metrics.resolutionRate >= 80 ? "SLA Met" : "SLA Breached"}
                   </td>
@@ -307,10 +492,10 @@ export function EngineerReport() {
                   <td style={styles.kpiTd}>Average Turn-Around-Time (TAT)</td>
                   <td style={styles.kpiTd}>&lt; 4.0 Days</td>
                   <td style={{ ...styles.kpiTd, fontWeight: "600" }}>{metrics.avgTat} Days</td>
-                  <td style={{ 
-                    ...styles.kpiTd, 
-                    fontWeight: "600", 
-                    color: metrics.avgTat <= 4 ? "var(--color-resolved)" : "var(--color-manual)" 
+                  <td style={{
+                    ...styles.kpiTd,
+                    fontWeight: "600",
+                    color: metrics.avgTat <= 4 ? "var(--color-resolved)" : "var(--color-manual)"
                   }}>
                     {metrics.avgTat <= 4 ? "SLA Met" : "SLA Breached"}
                   </td>
@@ -349,13 +534,41 @@ export function EngineerReport() {
             {/* Interactive Status Filter Tabs (Hidden on Print) */}
             <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }} className="no-print">
               {[
-                { key: "ALL", label: "All", count: tickets.length },
-                { key: "ASSIGNED", label: "Assigned", count: tickets.filter((t: any) => t.status === "ASSIGNED").length },
-                { key: "INITIAL_VISIT_COMPLETED", label: "Visited", count: tickets.filter((t: any) => t.status === "INITIAL_VISIT_COMPLETED").length },
-                { key: "MATERIAL_REQUESTED", label: "Material Req", count: tickets.filter((t: any) => t.status === "MATERIAL_REQUESTED").length },
-                { key: "INSURANCE_SUBMITTED", label: "Insurance", count: tickets.filter((t: any) => t.status === "INSURANCE_SUBMITTED").length },
-                { key: "RESOLVED", label: "Resolved", count: tickets.filter((t: any) => t.status === "RESOLVED").length },
-                { key: "MANUAL_ASSIGNMENT_REQUIRED", label: "Manual Assign", count: tickets.filter((t: any) => t.status === "MANUAL_ASSIGNMENT_REQUIRED").length }
+                {
+                  key: "ALL",
+                  label: "All",
+                  count: getTicketsForTab("ALL").length
+                },
+                {
+                  key: "ASSIGNED",
+                  label: "Assigned",
+                  count: getTicketsForTab("ASSIGNED").length
+                },
+                {
+                  key: "VISITED",
+                  label: "Visited",
+                  count: getTicketsForTab("VISITED").length
+                },
+                {
+                  key: "MATERIAL_REQUESTED",
+                  label: "Material Req",
+                  count: getTicketsForTab("MATERIAL_REQUESTED").length
+                },
+                {
+                  key: "INSURANCE_SUBMITTED",
+                  label: "Insurance",
+                  count: getTicketsForTab("INSURANCE_SUBMITTED").length
+                },
+                {
+                  key: "RESOLVED",
+                  label: "Resolved",
+                  count: getTicketsForTab("RESOLVED").length
+                },
+                {
+                  key: "MANUAL_ASSIGNMENT_REQUIRED",
+                  label: "Manual Assign",
+                  count: getTicketsForTab("MANUAL_ASSIGNMENT_REQUIRED").length
+                }
               ].map(st => (
                 <button
                   key={st.key}
@@ -390,28 +603,26 @@ export function EngineerReport() {
               </tr>
             </thead>
             <tbody>
-              {tickets
-                .filter((t: any) => selectedStatusTab === "ALL" || t.status === selectedStatusTab)
-                .map((t: any) => (
-                  <tr key={t.id}>
-                    <td style={{ ...styles.ticketTd, fontWeight: "600" }}>{t.ticketNumber}</td>
-                    <td style={{ ...styles.ticketTd, fontFamily: "monospace" }}>{t.complaint?.applicationId}</td>
-                    <td style={styles.ticketTd}>{t.complaint?.complaintType}</td>
-                    <td style={{ 
-                      ...styles.ticketTd, 
-                      fontWeight: "600", 
-                      color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "inherit"
-                    }}>
-                      {t.priority}
-                    </td>
-                    <td style={styles.ticketTd}>{t.status.replace(/_/g, " ")}</td>
-                    <td style={styles.ticketTd}>{new Date(t.createdAt).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              {tickets.filter((t: any) => selectedStatusTab === "ALL" || t.status === selectedStatusTab).length === 0 && (
+              {displayedTickets.map((t: any) => (
+                <tr key={t.id}>
+                  <td style={{ ...styles.ticketTd, fontWeight: "600" }}>{t.ticketNumber}</td>
+                  <td style={{ ...styles.ticketTd, fontFamily: "monospace" }}>{t.complaint?.applicationId}</td>
+                  <td style={styles.ticketTd}>{t.complaint?.complaintType}</td>
+                  <td style={{
+                    ...styles.ticketTd,
+                    fontWeight: "600",
+                    color: t.priority === "CRITICAL" ? "var(--color-manual)" : t.priority === "URGENT" ? "var(--color-material)" : "inherit"
+                  }}>
+                    {t.priority}
+                  </td>
+                  <td style={styles.ticketTd}>{t.status.replace(/_/g, " ")}</td>
+                  <td style={styles.ticketTd}>{new Date(t.createdAt).toLocaleDateString()}</td>
+                </tr>
+              ))}
+              {displayedTickets.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
-                    No tickets found for status "{selectedStatusTab.replace(/_/g, " ")}".
+                    No tickets found for this category during {getFilterLabel()}.
                   </td>
                 </tr>
               )}

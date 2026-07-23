@@ -214,6 +214,31 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
               className="form-input"
               style={styles.dateInput}
             />
+            {(startDate || endDate) && (
+              <button 
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                }} 
+                style={{
+                  marginLeft: "0.5rem",
+                  padding: "0.3rem 0.6rem",
+                  fontSize: "0.75rem",
+                  fontWeight: "600",
+                  color: "#ef4444",
+                  backgroundColor: "#fef2f2",
+                  border: "1px solid #fca5a5",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.25rem"
+                }}
+                className="no-print"
+              >
+                Clear Filter
+              </button>
+            )}
           </div>
 
           {/* State Filter Dropdown */}
