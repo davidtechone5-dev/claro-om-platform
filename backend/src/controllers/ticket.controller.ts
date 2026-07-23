@@ -483,19 +483,10 @@ export const ticketController = {
 
         if (Number.isNaN(visitDate.getTime())) return false;
 
-        const visitWasInPeriod =
+        return (
           visitDate.getTime() >= periodStart.getTime() &&
-          visitDate.getTime() <= periodEnd.getTime();
-
-        if (!visitWasInPeriod) return false;
-
-        if (!ticket.resolutionDate) return true;
-
-        const resolutionDate = new Date(ticket.resolutionDate);
-
-        if (Number.isNaN(resolutionDate.getTime())) return true;
-
-        return resolutionDate.getTime() > periodEnd.getTime();
+          visitDate.getTime() <= periodEnd.getTime()
+        );
       }).length;
 
       // Calculate Average Turn-Around-Time (TAT) in days (preferring Google Sheet "Overall TAT (days)")
@@ -806,19 +797,10 @@ export const ticketController = {
 
             if (Number.isNaN(visitDate.getTime())) return false;
 
-            const visitWasInPeriod =
+            return (
               visitDate.getTime() >= periodStart.getTime() &&
-              visitDate.getTime() <= periodEnd.getTime();
-
-            if (!visitWasInPeriod) return false;
-
-            if (!ticket.resolutionDate) return true;
-
-            const resolutionDate = new Date(ticket.resolutionDate);
-
-            if (Number.isNaN(resolutionDate.getTime())) return true;
-
-            return resolutionDate.getTime() > periodEnd.getTime();
+              visitDate.getTime() <= periodEnd.getTime()
+            );
           }).length;
 
           const resolvedCount = allTickets.filter((ticket) => {
