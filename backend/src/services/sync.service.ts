@@ -436,6 +436,7 @@ export const syncService = {
           const ticketChanged =
             existingTicket.status !== liveStage ||
             existingTicket.priority !== priority ||
+            existingTicket.deletedAt !== null ||
             metadataChanged;
 
           if (ticketChanged) {
@@ -443,7 +444,8 @@ export const syncService = {
               id: ticketId,
               status: liveStage,
               priority,
-              metadata: rowMetadata
+              metadata: rowMetadata,
+              deletedAt: null
             });
 
             // Generate status history entry ONLY on actual status changes
@@ -756,7 +758,8 @@ export const syncService = {
               data: {
                 status: t.status,
                 priority: t.priority,
-                metadata: t.metadata
+                metadata: t.metadata,
+                deletedAt: t.deletedAt
               }
             })
         );

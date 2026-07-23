@@ -24,6 +24,22 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
+  const getFilterLabel = () => {
+    if (!startDate && !endDate) return "(All Time)";
+    const formatDate = (dateStr: string) => {
+      if (!dateStr) return "";
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+    };
+    const startStr = formatDate(startDate);
+    const endStr = formatDate(endDate);
+    if (startStr && endStr) return `(${startStr} - ${endStr})`;
+    if (startStr) return `(From ${startStr})`;
+    if (endStr) return `(To ${endStr})`;
+    return "(Filtered)";
+  };
+
   const fetchReport = async () => {
     setLoading(true);
     setError(null);
@@ -54,9 +70,15 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
     const headers = [
       "Engineer Name",
       "State",
-      "All Tickets",
-      "Active",
-      "Resolved",
+      "All time Assigned",
+      "All time Resolved",
+      "All Tickets (in Period)",
+      "Assigned (in Period)",
+      "Visited (in Period)",
+      "Material Req (in Period)",
+      "Insurance (in Period)",
+      "Resolved (in Period)",
+      "Manual Assign (in Period)",
       "Avg TAT",
       "Score"
     ];
@@ -73,11 +95,17 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
       lines.push([
         `"${eng.name}"`,
         `"${eng.stateCode}"`,
+        eng.totalAssigned || 0,
+        eng.totalResolved || 0,
         eng.allCount || 0,
-        eng.activeCount || 0,
+        eng.assignedCount || 0,
+        eng.visitedCount || 0,
+        eng.materialReqCount || 0,
+        eng.insuranceCount || 0,
         eng.resolvedCount || 0,
-        `"${eng.avgTat || "0d"}"`,
-        eng.score || 0
+        eng.manualAssignCount || 0,
+        `"${eng.avgTat || "0 Days"}"`,
+        eng.performanceScore || 0
       ].join(","));
     });
 
@@ -113,7 +141,9 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
     materialReqCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.materialReqCount || 0), 0),
     insuranceCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.insuranceCount || 0), 0),
     resolvedCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.resolvedCount || 0), 0),
-    manualAssignCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.manualAssignCount || 0), 0)
+    manualAssignCount: filteredEngineers.reduce((acc: number, e: any) => acc + (e.manualAssignCount || 0), 0),
+    totalAssigned: filteredEngineers.reduce((acc: number, e: any) => acc + (e.totalAssigned || 0), 0),
+    totalResolved: filteredEngineers.reduce((acc: number, e: any) => acc + (e.totalResolved || 0), 0)
   };
 
   const dynamicTop5 = [...filteredEngineers]
@@ -335,13 +365,38 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
                     <table style={styles.table}>
                       <thead>
                         <tr style={styles.tableHeaderTr}>
-                          <th style={{ ...styles.thCell, textAlign: "left" }}>ENGINEER</th>
-                          <th style={{ ...styles.thCell, textAlign: "center" }}>STATE</th>
-                          <th style={{ ...styles.thCell, textAlign: "center" }}>ALL</th>
-                          <th style={{ ...styles.thCell, textAlign: "center" }}>ACTIVE</th>
-                          <th style={{ ...styles.thCell, textAlign: "center" }}>RESOLVED</th>
-                          <th style={{ ...styles.thCell, textAlign: "center" }}>AVG TAT</th>
-                          <th style={{ ...styles.thCell, textAlign: "left", width: "130px" }}>SCORE</th>
+                          <th style={{ ...styles.thCell, textAlign: "left" }}>
+                            <div>ENGINEER</div>
+                            <div style={{ height: "12px" }}></div>
+                          </th>
+                          <th style={{ ...styles.thCell, textAlign: "center" }}>
+                            <div>STATE</div>
+                            <div style={{ height: "12px" }}></div>
+                          </th>
+                          <th style={{ ...styles.thCell, textAlign: "center" }}>
+                            <div>ALL TIME ASSIGNED</div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#64748b", marginTop: "2px" }}>(All Time)</div>
+                          </th>
+                          <th style={{ ...styles.thCell, textAlign: "center" }}>
+                            <div>ALL TIME RESOLVED</div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#64748b", marginTop: "2px" }}>(All Time)</div>
+                          </th>
+                          <th style={{ ...styles.thCell, textAlign: "center" }}>
+                            <div>ASSIGNED IN DURATION</div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#64748b", marginTop: "2px" }}>{getFilterLabel()}</div>
+                          </th>
+                          <th style={{ ...styles.thCell, textAlign: "center" }}>
+                            <div>RESOLVED IN DURATION</div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#64748b", marginTop: "2px" }}>{getFilterLabel()}</div>
+                          </th>
+                          <th style={{ ...styles.thCell, textAlign: "center" }}>
+                            <div>AVG TAT</div>
+                            <div style={{ height: "12px" }}></div>
+                          </th>
+                          <th style={{ ...styles.thCell, textAlign: "left", width: "130px" }}>
+                            <div>SCORE</div>
+                            <div style={{ height: "12px" }}></div>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -359,9 +414,10 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
                                 </span>
                               </td>
                               <td style={{ ...styles.tdCell, textAlign: "center", color: "#64748b", fontWeight: "600" }}>{eng.stateCode}</td>
-                              <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "700" }}>{eng.allCount || 0}</td>
-                              <td style={{ ...styles.tdCell, textAlign: "center", color: "#64748b" }}>{eng.activeCount || 0}</td>
-                              <td style={{ ...styles.tdCell, textAlign: "center", color: "#10B981", fontWeight: "700" }}>{eng.resolvedCount || 0}</td>
+                              <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "700" }}>{eng.totalAssigned || 0}</td>
+                              <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "700", color: "#10B981" }}>{eng.totalResolved || 0}</td>
+                              <td style={{ ...styles.tdCell, textAlign: "center", color: "#64748b" }}>{eng.assignedInWindow || 0}</td>
+                              <td style={{ ...styles.tdCell, textAlign: "center", color: "#10B981", fontWeight: "700" }}>{eng.resolvedInWindow || 0}</td>
                               <td style={{ ...styles.tdCell, textAlign: "center", color: "#64748b" }}>{eng.avgTat || "—"}</td>
                               <td style={{ ...styles.tdCell, textAlign: "left" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -529,14 +585,46 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.darkRedHeaderTr}>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "left" }}>Engineer</th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>All Tickets</th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>Assigned</th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>Visited</th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>Material Req</th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>Insurance</th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>Resolved</th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>Manual Assign</th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "left" }}>
+                        <div>Engineer</div>
+                        <div style={{ height: "12px" }}></div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>All time Assigned</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>(All Time)</div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>All time Resolved</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>(All Time)</div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>All Tickets</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>Assigned</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>Visited</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>Material Req</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>Insurance</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>Resolved</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                      </th>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
+                        <div>Manual Assign</div>
+                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -548,6 +636,8 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
                           </span>
                           <span style={{ fontSize: "0.72rem", color: "#64748b", marginLeft: "0.4rem" }}>({eng.stateCode})</span>
                         </td>
+                        <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "800", color: "#475569" }}>{eng.totalAssigned || 0}</td>
+                        <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "800", color: "#10b981" }}>{eng.totalResolved || 0}</td>
                         <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "800" }}>{eng.allCount || 0}</td>
                         <td style={{ ...styles.tdCell, textAlign: "center", color: "#2563eb", fontWeight: "600" }}>{eng.assignedCount || 0}</td>
                         <td style={{ ...styles.tdCell, textAlign: "center", color: "#0891b2", fontWeight: "600" }}>{eng.visitedCount || 0}</td>
@@ -559,6 +649,8 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
                     ))}
                     <tr style={styles.darkRedTotalTr}>
                       <td style={{ ...styles.totalTd, textAlign: "left" }}>Total ({filteredEngineers.length} Engineers)</td>
+                      <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.totalAssigned}</td>
+                      <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.totalResolved}</td>
                       <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.allCount}</td>
                       <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.assignedCount}</td>
                       <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.visitedCount}</td>

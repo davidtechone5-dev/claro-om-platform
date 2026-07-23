@@ -11,6 +11,7 @@ export function normalizeStatus(statusStr: string): string | null {
   if (s === "RESOLVED" || s === "FULLYRESOLVED" || s === "6FULLYRESOLVED" || s === "CLOSED" || s === "REMOTELYRESOLVED") return "RESOLVED";
   if (s === "VERIFIED") return "VERIFIED";
   if (s === "ONHOLD" || s === "ON_HOLD" || s === "HOLD") return "ON_HOLD";
+  if (s === "OUTOFSCOPE" || s === "OUTOF_SCOPE" || s === "OUT_OF_SCOPE") return "OUT_OF_SCOPE";
   if (s === "MANUALASSIGN" || s === "MANUALASSIGNMENTREQUIRED" || s === "NEEDSASSIGNMENT" || s === "NEEDSMANUALASSIGNMENT") return "MANUAL_ASSIGNMENT_REQUIRED";
   return null;
 }
