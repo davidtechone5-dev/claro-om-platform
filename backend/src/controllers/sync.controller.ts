@@ -72,6 +72,7 @@ export const syncController = {
 
         // If updating existing ticket/complaint
         if (existingComplaint && existingComplaint.tickets.length > 0) {
+          const project = payload["Project"] || payload["project"] || "Other";
           await tx.complaint.update({
             where: { id: existingComplaint.id },
             data: {
@@ -80,6 +81,7 @@ export const syncController = {
               complaintType,
               description,
               submissionTimestamp: parseSafeDate(timestampStr) || new Date(),
+              project,
               metadata: payload
             }
           });
@@ -168,6 +170,7 @@ export const syncController = {
         }
 
         // Creating brand new ticket/complaint
+        const project = payload["Project"] || payload["project"] || "Other";
         const complaint = await tx.complaint.create({
           data: {
             formResponseId: rowNumber.toString(),
@@ -178,6 +181,7 @@ export const syncController = {
             description,
             submissionTimestamp: parseSafeDate(timestampStr) || new Date(),
             syncStatus: "SYNCED",
+            project,
             metadata: payload
           }
         });
@@ -622,6 +626,138 @@ export const syncController = {
         return res.status(409).json({ detail: "A spreadsheet synchronization is already in progress. Please try again in a few moments." });
       }
       return res.status(500).json({ detail: `Full Sync Error: ${err.message}` });
+    }
+  },
+
+  async syncMaterialRequestLive(req: Request, res: Response) {
+    const payload = req.body;
+
+    const timestampStr = payload.Timestamp || payload.timestamp;
+    const warehouseStr = payload.Warehouse || payload.warehouse;
+    const appId = payload.AppId || payload.appId;
+    const pumpCapacity = payload.PumpCapacity || payload.pumpCapacity;
+    const materialRequired = payload.MaterialRequired || payload.materialRequired;
+    const engName = payload.EngineerName || payload.engineerName;
+    const quantityStr = payload.Quantity || payload.quantity;
+
+    if (!materialRequired) {
+      return res.status(400).json({ detail: "Missing material required." });
+    }
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        // Parse Date
+        let requestedAt = new Date();
+        if (timestampStr) {
+          const { parseSafeDate } = await import("../utils/date.js");
+          requestedAt = parseSafeDate(timestampStr) || new Date(timestampStr);
+          if (isNaN(requestedAt.getTime())) requestedAt = new Date();
+        }
+
+        // Match Engineer
+        let engineerId = "";
+        if (engName) {
+          const engObj = await tx.engineer.findFirst({
+            where: { name: { contains: engName, mode: "insensitive" } }
+          });
+          if (engObj) engineerId = engObj.id;
+        }
+        if (!engineerId) {
+          const firstEng = await tx.engineer.findFirst();
+          if (firstEng) {
+            engineerId = firstEng.id;
+          } else {
+            const mockEng = await tx.engineer.create({
+              data: {
+                name: "Default Engineer",
+                email: "default.engineer@claro.com",
+                phone: "0000000000"
+              }
+            });
+            engineerId = mockEng.id;
+          }
+        }
+
+        // Match Ticket
+        let ticketId = "";
+        if (appId) {
+          const complaint = await tx.complaint.findFirst({
+            where: { applicationId: appId },
+            include: { tickets: true }
+          });
+          if (complaint && complaint.tickets && complaint.tickets.length > 0) {
+            ticketId = complaint.tickets[0].id;
+          } else {
+            let complaintId = complaint?.id || "";
+            if (!complaintId) {
+              await tx.masterInstallation.upsert({
+                where: { applicationId: appId },
+                update: {},
+                create: {
+                  applicationId: appId,
+                  clientName: "Orphan WMS Client",
+                  address: `${warehouseStr || "Unknown Warehouse"} (${pumpCapacity || "Unknown Capacity"})`
+                }
+              });
+
+              const newComplaint = await tx.complaint.create({
+                data: {
+                  applicationId: appId,
+                  complainantName: "Orphan WMS Client",
+                  complainantPhone: "0000000000",
+                  complaintType: "Spare Requisition",
+                  description: `Material request for ${materialRequired}`,
+                  submissionTimestamp: requestedAt,
+                  project: "Other"
+                }
+              });
+              complaintId = newComplaint.id;
+            }
+
+            const mockTicket = await tx.ticket.create({
+              data: {
+                ticketNumber: `TKT-WMS-MR-${appId}-${Math.floor(1000 + Math.random() * 9000)}`,
+                complaintId: complaintId,
+                status: "MATERIAL_REQUESTED",
+                priority: "STANDARD",
+                createdAt: requestedAt,
+                dueDate: new Date(requestedAt.getTime() + 72 * 60 * 60 * 1000)
+              }
+            });
+            ticketId = mockTicket.id;
+          }
+        }
+
+        if (!ticketId) {
+          const firstTicket = await tx.ticket.findFirst();
+          if (firstTicket) ticketId = firstTicket.id;
+        }
+
+        // Create Material Request in DB
+        const matRequest = await tx.materialRequest.create({
+          data: {
+            ticketId: ticketId,
+            requestedBy: engineerId,
+            status: "PENDING",
+            remarks: `Requested Spare Part: ${materialRequired}`,
+            createdAt: requestedAt
+          }
+        });
+
+        const item = await tx.materialRequestItem.create({
+          data: {
+            materialRequestId: matRequest.id,
+            itemName: materialRequired,
+            quantity: parseInt(quantityStr) || 1
+          }
+        });
+
+        return { mrId: matRequest.id, itemId: item.id };
+      });
+
+      return res.status(201).json(result);
+    } catch (err: any) {
+      return res.status(500).json({ detail: err.message });
     }
   }
 };

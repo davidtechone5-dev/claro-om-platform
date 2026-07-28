@@ -204,9 +204,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
     const appId = (t.complaint?.applicationId || "").toUpperCase();
     const stName = (t.complaint?.masterInstallation?.state?.name || "").toUpperCase();
     let proj = "Other";
-    const sheetProject = t.metadata && typeof t.metadata === "object"
-      ? (t.metadata["Project"] || t.metadata["project"])
-      : null;
+    const sheetProject = t.complaint?.project;
 
     if (sheetProject) {
       const upperSheet = String(sheetProject).toUpperCase();

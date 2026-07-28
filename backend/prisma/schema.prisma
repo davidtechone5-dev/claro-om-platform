@@ -71,6 +71,7 @@ model User {
   materialRequests      MaterialRequest[]
   notifications         Notification[]
   auditLogs             AuditLog[]
+  inventoryMovements    InventoryMovement[]
 
   @@map("users")
 }
@@ -169,6 +170,7 @@ model Complaint {
   submissionTimestamp DateTime           @map("submission_timestamp")
   syncStatus          String             @default("PENDING") @map("sync_status")
   syncError           String?            @map("sync_error")
+  project             String?            @default("Other")
   metadata            Json?              @map("metadata")
   createdAt           DateTime           @default(now()) @map("created_at")
   updatedAt           DateTime           @default(now()) @map("updated_at")
@@ -404,4 +406,127 @@ model SyncLog {
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@map("sync_logs")
+}
+
+model Manufacturer {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("manufacturers")
+}
+
+model Part {
+  id              String                  @id @default(uuid())
+  code            String                  @unique
+  description     String
+  category        String?
+  hpRating        String?                 @map("hp_rating")
+  serialTracked   Boolean                 @default(true) @map("serial_tracked")
+  valuationAmount Decimal                 @default(0.0) @map("valuation_amount")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @default(now()) @map("updated_at")
+
+  movementLines   InventoryMovementLine[]
+
+  @@map("parts")
+}
+
+model Warehouse {
+  id          String              @id @default(uuid())
+  name        String              @unique
+  code        String              @default("JAL")
+  stateCode   String              @default("MH") @map("state_code")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @default(now()) @map("updated_at")
+
+  movements   InventoryMovement[]
+
+  @@map("warehouses")
+}
+
+model UnitLedger {
+  serialNo          String    @id @map("serial_no")
+  partCode          String    @map("part_code")
+  status            String    // Fresh / Sent-to Farmer / Faulty-Received / At-Manufacturer / Repaired-Pending
+  condition         String?   // Repaired / New / Scrapped
+  currentLocation   String?   @map("current_location") // Warehouse ID or Farmer App ID or Manufacturer Name
+  linkedPriorSerial String?   @map("linked_prior_serial")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @map("updated_at")
+
+  @@map("unit_ledger")
+}
+
+model InventoryMovement {
+  id                String                  @id @default(uuid())
+  warehouseId       String                  @map("warehouse_id")
+  type              Int                     // 1 to 5 matching the cycle stage
+  timestamp         DateTime                @default(now())
+  partyName         String                  @map("party_name")
+  referenceNumber   String                  @map("reference_number")
+  vehicleNumber     String?                 @map("vehicle_number")
+  reportedFault     String?                 @map("reported_fault")
+  conditionReceived String?                 @map("condition_received")
+  userId            String                  @map("user_id")
+  materialRequestId String?                 @map("material_request_id")
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @default(now()) @map("updated_at")
+
+  warehouse         Warehouse               @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  lines             InventoryMovementLine[]
+  challans          Challan[]
+
+  @@map("inventory_movements")
+}
+
+model InventoryMovementLine {
+  id            String                  @id @default(uuid())
+  movementId    String                  @map("movement_id")
+  partId        String                  @map("part_id")
+  quantity      Int
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @default(now()) @map("updated_at")
+
+  movement      InventoryMovement       @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  part          Part                    @relation(fields: [partId], references: [id], onDelete: Restrict)
+  serialNumbers MovementSerialNumber[]
+
+  @@map("inventory_movement_lines")
+}
+
+model MovementSerialNumber {
+  id             String                @id @default(uuid())
+  movementLineId String                @map("movement_line_id")
+  serialNumber   String                @map("serial_number")
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  movementLine   InventoryMovementLine @relation(fields: [movementLineId], references: [id], onDelete: Cascade)
+
+  @@map("movement_serial_numbers")
+}
+
+model Challan {
+  id                 String            @id @default(uuid())
+  challanNumber      String            @unique @map("challan_number")
+  challanDate        DateTime          @default(now()) @map("challan_date")
+  movementId         String            @map("movement_id")
+  destinationName    String            @map("destination_name")
+  destinationAddress String            @map("destination_address")
+  destinationGst     String?           @map("destination_gst")
+  destinationContact String?           @map("destination_contact")
+  dispatchMode       String            @default("Transport") @map("dispatch_mode")
+  purpose            String            @default("Repair & Replacement")
+  remarks            String?
+  preparedBy         String?           @map("prepared_by")
+  totalAmount        Decimal           @default(0.0) @map("total_amount")
+  gstRate            Decimal           @default(5.0) @map("gst_rate")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @default(now()) @map("updated_at")
+
+  movement           InventoryMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
+
+  @@map("challans")
 }

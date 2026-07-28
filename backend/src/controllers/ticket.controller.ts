@@ -155,17 +155,70 @@ export const ticketController = {
     try {
       const tickets = await prisma.ticket.findMany({
         where: whereClause,
-        include: {
+        select: {
+          id: true,
+          ticketNumber: true,
+          complaintId: true,
+          status: true,
+          priority: true,
+          dueDate: true,
+          createdAt: true,
+          updatedAt: true,
           complaint: {
-            include: {
+            select: {
+              id: true,
+              formResponseId: true,
+              applicationId: true,
+              complainantName: true,
+              complainantPhone: true,
+              complaintType: true,
+              description: true,
+              submissionTimestamp: true,
+              syncStatus: true,
+              project: true,
+              createdAt: true,
               masterInstallation: {
-                include: { state: true, district: true }
+                select: {
+                  id: true,
+                  applicationId: true,
+                  clientName: true,
+                  installationDate: true,
+                  address: true,
+                  stateId: true,
+                  districtId: true,
+                  state: {
+                    select: {
+                      id: true,
+                      name: true
+                    }
+                  },
+                  district: {
+                    select: {
+                      id: true,
+                      stateId: true,
+                      name: true
+                    }
+                  }
+                }
               }
             }
           },
           assignments: {
             where: { deletedAt: null },
-            include: { engineer: true }
+            select: {
+              id: true,
+              ticketId: true,
+              engineerId: true,
+              assignedAt: true,
+              engineer: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true
+                }
+              }
+            }
           }
         },
         take: parseInt(limit.toString(), 10),
@@ -1026,7 +1079,15 @@ export const ticketController = {
       const requests = await prisma.materialRequest.findMany({
         where: { deletedAt: null },
         include: {
-          ticket: true,
+          ticket: {
+            include: {
+              complaint: {
+                include: {
+                  masterInstallation: true
+                }
+              }
+            }
+          },
           engineer: true,
           items: true
         },
@@ -1202,6 +1263,58 @@ export const ticketController = {
 
     } catch (e: any) {
       console.error("AMC metrics error:", e);
+      return res.status(500).json({ detail: e.message });
+    }
+  },
+
+  /**
+   * Get a single ticket details with metadata
+   * GET /api/v1/tickets/:id
+   */
+  async getTicketDetails(req: AuthenticatedRequest, res: Response) {
+    const { id } = req.params;
+    try {
+      const ticket = await prisma.ticket.findFirst({
+        where: { id, deletedAt: null },
+        include: {
+          complaint: {
+            include: {
+              masterInstallation: {
+                include: { state: true, district: true }
+              }
+            }
+          },
+          assignments: {
+            where: { deletedAt: null },
+            include: { engineer: true }
+          },
+          initialVisits: {
+            where: { deletedAt: null },
+            include: { engineer: true }
+          },
+          serviceReports: {
+            where: { deletedAt: null }
+          },
+          materialRequests: {
+            where: { deletedAt: null },
+            include: {
+              items: true,
+              engineer: true
+            }
+          },
+          history: {
+            orderBy: { createdAt: "desc" }
+          }
+        }
+      });
+
+      if (!ticket) {
+        return res.status(404).json({ detail: `Ticket ${id} not found.` });
+      }
+
+      return res.status(200).json(ticket);
+    } catch (e: any) {
+      console.error("Get ticket details error:", e);
       return res.status(500).json({ detail: e.message });
     }
   }

@@ -14,6 +14,8 @@ interface SidebarProps {
 
 export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
   const isEngineer = user.role === "Engineer";
+  const isWarehouse = user.role === "Warehouse";
+  const canSeeAll = !isEngineer && !isWarehouse;
 
   const handleLinkClick = () => {
     if (window.innerWidth <= 768) {
@@ -36,47 +38,53 @@ export function Sidebar({ user, onLogout, isOpen, onClose }: SidebarProps) {
       </div>
       
       <nav style={styles.nav}>
-        <NavLink 
-          to="/" 
-          onClick={handleLinkClick}
-          className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
-        >
-          <LayoutDashboard size={20} />
-          <span>Dashboard</span>
-        </NavLink>
+        {canSeeAll && (
+          <NavLink 
+            to="/" 
+            onClick={handleLinkClick}
+            className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
+          >
+            <LayoutDashboard size={20} />
+            <span>Dashboard</span>
+          </NavLink>
+        )}
 
-        {!isEngineer && (
+        {canSeeAll && (
+          <NavLink 
+            to="/tickets" 
+            onClick={handleLinkClick}
+            className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
+          >
+            <Ticket size={20} />
+            <span>Tickets Registry</span>
+          </NavLink>
+        )}
+
+        {isWarehouse && (
+          <NavLink 
+            to="/warehouse" 
+            onClick={handleLinkClick}
+            className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
+          >
+            <Warehouse size={20} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+              <span>WMS Dashboard</span>
+              <span style={{ 
+                fontSize: "0.62rem", 
+                backgroundColor: "#fee2e2", 
+                color: "#b91c1c", 
+                padding: "0.1rem 0.35rem", 
+                borderRadius: "3px", 
+                fontWeight: "800", 
+                textTransform: "uppercase",
+                letterSpacing: "0.02em"
+              }}>Active</span>
+            </div>
+          </NavLink>
+        )}
+
+        {canSeeAll && (
           <>
-            <NavLink 
-              to="/tickets" 
-              onClick={handleLinkClick}
-              className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
-            >
-              <Ticket size={20} />
-              <span>Tickets Registry</span>
-            </NavLink>
-
-            <NavLink 
-              to="/warehouse" 
-              onClick={handleLinkClick}
-              className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
-            >
-              <Warehouse size={20} />
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-                <span>Warehouse Logs</span>
-                <span style={{ 
-                  fontSize: "0.62rem", 
-                  backgroundColor: "#fee2e2", 
-                  color: "#b91c1c", 
-                  padding: "0.1rem 0.35rem", 
-                  borderRadius: "3px", 
-                  fontWeight: "800", 
-                  textTransform: "uppercase",
-                  letterSpacing: "0.02em"
-                }}>Beta</span>
-              </div>
-            </NavLink>
-
             <NavLink 
               to="/amc" 
               onClick={handleLinkClick}

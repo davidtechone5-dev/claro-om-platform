@@ -90,6 +90,8 @@ function App() {
   }
 
   const isEngineer = user.role === "Engineer";
+  const isWarehouse = user.role === "Warehouse";
+  const canAccessAll = !isEngineer && !isWarehouse;
 
   return (
     <Router>
@@ -120,24 +122,43 @@ function App() {
         
         <main className="main-content">
           <Routes>
-            <Route path="/" element={<Dashboard user={user} />} />
+            <Route 
+              path="/" 
+              element={
+                isWarehouse ? <Navigate to="/warehouse" replace /> :
+                isEngineer ? <Navigate to="/tickets" replace /> :
+                <Dashboard user={user} />
+              } 
+            />
             
-            {/* Guard routes for Engineers */}
+            {/* Guard routes for Engineers & Warehouse roles */}
             <Route 
               path="/tickets" 
-              element={isEngineer ? <Navigate to="/" replace /> : <Tickets />} 
+              element={canAccessAll ? <Tickets /> : <Navigate to="/" replace />} 
             />
-            <Route path="/tickets/:id" element={<TicketDetails />} />
-            <Route path="/engineers/overview" element={<EngineersOverview />} />
-            <Route path="/engineers/:id/report" element={<EngineerReport />} />
-            <Route path="/states/:stateName/report" element={<StateReport />} />
+            <Route 
+              path="/tickets/:id" 
+              element={canAccessAll ? <TicketDetails /> : <Navigate to="/" replace />} 
+            />
+            <Route 
+              path="/engineers/overview" 
+              element={canAccessAll ? <EngineersOverview /> : <Navigate to="/" replace />} 
+            />
+            <Route 
+              path="/engineers/:id/report" 
+              element={canAccessAll ? <EngineerReport /> : <Navigate to="/" replace />} 
+            />
+            <Route 
+              path="/states/:stateName/report" 
+              element={canAccessAll ? <StateReport /> : <Navigate to="/" replace />} 
+            />
             <Route 
               path="/warehouse" 
               element={isEngineer ? <Navigate to="/" replace /> : <Warehouse />} 
             />
             <Route 
               path="/amc" 
-              element={isEngineer ? <Navigate to="/" replace /> : <AMCTracker />} 
+              element={canAccessAll ? <AMCTracker /> : <Navigate to="/" replace />} 
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

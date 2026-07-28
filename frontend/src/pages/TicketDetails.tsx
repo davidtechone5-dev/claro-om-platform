@@ -1,26 +1,22 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../utils/api";
 import { ArrowLeft, ShieldAlert, MapPin, Phone, User, Clock } from "lucide-react";
 
 export function TicketDetails() {
   const { id } = useParams();
-  const location = useLocation();
   const navigate = useNavigate();
   
-  const [ticket, setTicket] = useState<any>(location.state?.ticket || null);
-  const [loading, setLoading] = useState(!ticket);
+  const [ticket, setTicket] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
+      if (!id) return;
+      setLoading(true);
       try {
-        if (!ticket && id) {
-          const data = await api.getTickets();
-          const t = data.tickets?.find((item: any) => item.id === id);
-          if (t) {
-            setTicket(t);
-          }
-        }
+        const data = await api.getTicketById(id);
+        setTicket(data);
       } catch (err) {
         console.error(err);
       } finally {
@@ -28,7 +24,7 @@ export function TicketDetails() {
       }
     }
     loadData();
-  }, [id, ticket]);
+  }, [id]);
 
   const activeAssignment = ticket?.assignments?.[0];
 

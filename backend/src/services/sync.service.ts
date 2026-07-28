@@ -2,7 +2,7 @@ import { prisma } from "../db.js";
 import { parseCSV } from "../utils/csv.js";
 import { parseSafeDate } from "../utils/date.js";
 import { normalizeStatus, normalizePriority } from "../utils/status.js";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 
 // Mutex lock to prevent concurrent full sheet syncs
 let isSyncing = false;
@@ -85,6 +85,33 @@ export const syncService = {
       const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv${gid ? `&gid=${gid}` : ""}`;
       const response = await fetchWithRetry(url);
       const csvText = await response.text();
+
+      // Compute SHA-256 hash of the CSV content
+      const csvHash = createHash("sha256").update(csvText).digest("hex");
+
+      // Check if this hash is already successfully synced
+      const lastSyncHashRecord = await prisma.syncLog.findFirst({
+        where: {
+          sheetName: "Consolidated Hash",
+          status: "SUCCESS"
+        },
+        orderBy: {
+          createdAt: "desc"
+        }
+      });
+
+      if (lastSyncHashRecord && lastSyncHashRecord.errorMessage === csvHash) {
+        console.log(`⚡ [Sync] Spreadsheet content has not changed (Hash: ${csvHash}). Skipping database reload.`);
+        return {
+          skipped: true,
+          detail: "No changes detected in spreadsheet.",
+          installationsCount: 0,
+          ticketsCount: 0,
+          created: { tickets: 0, complaints: 0, assignments: 0, visits: 0, reports: 0, materialRequests: 0 },
+          updated: { tickets: 0, complaints: 0, assignments: 0, visits: 0, reports: 0, materialRequests: 0 },
+          cleared: { assignments: 0, visits: 0, reports: 0, materialRequests: 0 }
+        };
+      }
 
       // 2. Parse CSV
       const rows = parseCSV(csvText);
@@ -413,12 +440,16 @@ export const syncService = {
           // Accurate Metadata Comparison
           const metadataChanged = !areObjectsEqual(existingTicket.metadata, rowMetadata);
 
+
+
           // Check if complaint fields changed
+          const project = rowMetadata["Project"] || rowMetadata["project"] || "Other";
           const complaintChanged =
             existingTicket.complaint.complainantName !== clientName.trim() ||
             existingTicket.complaint.complainantPhone !== complainantPhone.trim() ||
             existingTicket.complaint.complaintType !== complaintType.trim() ||
             existingTicket.complaint.description !== description.trim() ||
+            existingTicket.complaint.project !== project ||
             metadataChanged;
 
           if (complaintChanged) {
@@ -428,6 +459,7 @@ export const syncService = {
               complainantPhone: complainantPhone.trim(),
               complaintType: complaintType.trim(),
               description: description.trim(),
+              project,
               metadata: rowMetadata
             });
           }
@@ -595,6 +627,7 @@ export const syncService = {
             description: description.trim(),
             submissionTimestamp: complaintDate,
             syncStatus: "SYNCED",
+            project: rowMetadata["Project"] || rowMetadata["project"] || "Other",
             metadata: rowMetadata
           });
 
@@ -863,6 +896,16 @@ export const syncService = {
       } else if (existingTickets.length > 0) {
         console.warn(`⚠️ Safety Guard Triggered: Parsed row count (${processedTicketNumbers.size}) is lower than minimum safe threshold (${minimumSafeRows}). Skipped deleting missing tickets to preserve database integrity.`);
       }
+
+      // Save the new successfully processed sheet hash to SyncLog
+      await prisma.syncLog.create({
+        data: {
+          sheetName: "Consolidated Hash",
+          rowNumber: 0,
+          status: "SUCCESS",
+          errorMessage: csvHash
+        }
+      });
 
       return {
         installationsCount: processedInstallations.size,

@@ -247,6 +247,7 @@ async function run() {
 
       // 4. Create Complaint
       const complaintDate = parseMDYDate(createdAtStr) || new Date();
+      const project = payload["Project"] || payload["project"] || "Other";
       const complaint = await prisma.complaint.create({
         data: {
           applicationId: finalAppId,
@@ -256,6 +257,7 @@ async function run() {
           description: description,
           submissionTimestamp: complaintDate,
           syncStatus: "SUCCESS",
+          project,
           metadata: payload
         }
       });
@@ -316,26 +318,8 @@ async function run() {
         });
       }
 
-      // 9. Create Material Request if status exists and is not N/A
-      if (materialStatusStr && materialStatusStr !== "N/A" && engineerDbId) {
-        const cleanMatStatus = normalizeMaterialStatus(materialStatusStr);
-        const matRequest = await prisma.materialRequest.create({
-          data: {
-            ticketId: ticket.id,
-            requestedBy: engineerDbId,
-            status: cleanMatStatus,
-            remarks: "Required controller wiring components."
-          }
-        });
 
-        await prisma.materialRequestItem.create({
-          data: {
-            materialRequestId: matRequest.id,
-            itemName: "Solar Pump Controller Card",
-            quantity: 1
-          }
-        });
-      }
+      // 9. Material Request creation removed here (now synced from secondary sheet at the end of the script)
 
       // 10. Write History Log
       await prisma.ticketHistory.create({
@@ -348,12 +332,169 @@ async function run() {
       });
     }
 
+    // Fetch and sync material requests from the secondary spreadsheet
+    let mrCount = 0;
+    const mrSpreadsheetId = process.env.MATERIAL_REQUESTS_SPREADSHEET_ID;
+    if (mrSpreadsheetId) {
+      console.log("📥 Downloading Material Requests sheet data...");
+      
+      // Parse ID and GID from URL if needed
+      let mrId = mrSpreadsheetId;
+      let mrGid = "193399218"; // default GID from user link
+      if (mrId.includes("docs.google.com/spreadsheets")) {
+        const gidMatch = mrId.match(/[?&]gid=([^&#]+)/);
+        if (gidMatch) {
+          mrGid = gidMatch[1];
+        }
+        const match = mrId.match(/\/d\/([^/]+)/);
+        if (match) {
+          mrId = match[1];
+        }
+      }
+
+      try {
+        const mrCSV = await fetchSheetAsCSV(mrId, mrGid);
+        const mrRows = parseCSV(mrCSV).slice(1);
+        console.log(`✅ Loaded ${mrRows.length} material request rows from Google Sheet.`);
+
+        for (const row of mrRows) {
+          const timestampStr = row[0]?.trim();
+          const warehouseStr = row[1]?.trim();
+          const appId = row[2]?.trim();
+          const pumpCapacity = row[3]?.trim();
+          const materialRequired = row[4]?.trim();
+          const engName = row[6]?.trim();
+          const quantityStr = row[8]?.trim();
+
+          if (!materialRequired) continue;
+
+          // Parse Date
+          let requestedAt = new Date();
+          if (timestampStr) {
+            requestedAt = parseSafeDate(timestampStr) || new Date(timestampStr);
+            if (isNaN(requestedAt.getTime())) requestedAt = new Date();
+          }
+
+          // Match Engineer from Engineer table
+          let engineerId = "";
+          if (engName) {
+            const engObj = await prisma.engineer.findFirst({
+              where: { name: { contains: engName, mode: "insensitive" } }
+            });
+            if (engObj) {
+              engineerId = engObj.id;
+            }
+          }
+
+          if (!engineerId) {
+            const firstEng = await prisma.engineer.findFirst();
+            if (firstEng) {
+              engineerId = firstEng.id;
+            } else {
+              const mockEng = await prisma.engineer.create({
+                data: {
+                  name: "Default Engineer",
+                  email: "default.engineer@claro.com",
+                  phone: "0000000000"
+                }
+              });
+              engineerId = mockEng.id;
+            }
+          }
+
+          // Match Ticket (via Complaint Application ID)
+          let ticketId = "";
+          if (appId) {
+            const complaint = await prisma.complaint.findFirst({
+              where: { applicationId: appId },
+              include: { tickets: true }
+            });
+            if (complaint && complaint.tickets && complaint.tickets.length > 0) {
+              ticketId = complaint.tickets[0].id;
+            } else {
+              // Create a dummy complaint and ticket for the orphan request so it is still valid and trackable in the WMS!
+              let complaintId = complaint?.id || "";
+              if (!complaintId) {
+                // Upsert a mock installation for the orphan
+                await prisma.masterInstallation.upsert({
+                  where: { applicationId: appId },
+                  update: {},
+                  create: {
+                    applicationId: appId,
+                    clientName: "Orphan WMS Client",
+                    address: `${warehouseStr || "Unknown Warehouse"} (${pumpCapacity || "Unknown Capacity"})`
+                  }
+                });
+
+                const newComplaint = await prisma.complaint.create({
+                  data: {
+                    applicationId: appId,
+                    complainantName: "Orphan WMS Client",
+                    complainantPhone: "0000000000",
+                    complaintType: "Spare Requisition",
+                    description: `Material request for ${materialRequired}`,
+                    submissionTimestamp: requestedAt,
+                    project: "Other"
+                  }
+                });
+                complaintId = newComplaint.id;
+              }
+
+              const mockTicket = await prisma.ticket.create({
+                data: {
+                  ticketNumber: `TKT-WMS-MR-${appId}-${Math.floor(1000 + Math.random() * 9000)}`,
+                  complaintId: complaintId,
+                  status: "MATERIAL_REQUESTED",
+                  priority: "STANDARD",
+                  createdAt: requestedAt,
+                  dueDate: new Date(requestedAt.getTime() + 72 * 60 * 60 * 1000)
+                }
+              });
+              ticketId = mockTicket.id;
+            }
+          }
+
+          if (!ticketId) {
+            // Fallback: If no appId at all, find the first ticket in the DB
+            const firstTicket = await prisma.ticket.findFirst();
+            if (firstTicket) {
+              ticketId = firstTicket.id;
+            }
+          }
+
+          // Create Material Request in DB
+          const matRequest = await prisma.materialRequest.create({
+            data: {
+              ticketId: ticketId, // links to matched ticket (or remains null if legacy/orphan)
+              requestedBy: engineerId,
+              status: "PENDING", // Default to PENDING for the WMS fulfillment cycle
+              remarks: `Requested Spare Part: ${materialRequired}`,
+              createdAt: requestedAt
+            }
+          });
+
+          await prisma.materialRequestItem.create({
+            data: {
+              materialRequestId: matRequest.id,
+              itemName: materialRequired,
+              quantity: parseInt(quantityStr) || 1
+            }
+          });
+
+          mrCount++;
+        }
+      } catch (err: any) {
+        console.warn("⚠️ Warning: Failed to import material requests sheet:", err.message);
+      }
+    }
+
     console.log(`\n=============================================`);
     console.log(`🎉 SUCCESS: Historical Database Loaded!`);
     console.log(`=============================================`);
     console.log(`📍 Master Installations added: ${installationsCount}`);
     console.log(`📍 Engineers Profiles added:    ${engineersCount}`);
     console.log(`📍 Live Tickets Imported:        ${ticketsCount}`);
+    console.log(`📍 Material Requests Synced:     ${mrCount}`);
     console.log(`=============================================\n`);
 
   } catch (error: any) {

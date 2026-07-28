@@ -6,6 +6,7 @@ import { errorHandler } from "./middleware/error.js";
 import { authController } from "./controllers/auth.controller.js";
 import { syncController } from "./controllers/sync.controller.js";
 import { ticketController } from "./controllers/ticket.controller.js";
+import { wmsController } from "./controllers/wms.controller.js";
 import { prisma } from "./db.js";
 
 const app = express();
@@ -68,6 +69,11 @@ app.post(
   syncController.syncMaterialRequest
 );
 app.post(
+  "/api/v1/sync/material-request-live",
+  authMiddleware.authenticateIntegration,
+  syncController.syncMaterialRequestLive
+);
+app.post(
   "/api/v1/sync/insurance",
   authMiddleware.authenticateIntegration,
   syncController.syncInsurance
@@ -89,6 +95,11 @@ app.get(
   "/api/v1/tickets",
   authMiddleware.authenticateJWT,
   ticketController.listTickets
+);
+app.get(
+  "/api/v1/tickets/:id",
+  authMiddleware.authenticateJWT,
+  ticketController.getTicketDetails
 );
 app.post(
   "/api/v1/tickets/:id/assign",
@@ -139,6 +150,98 @@ app.patch(
   authMiddleware.authenticateJWT,
   authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
   ticketController.updateMaterialRequestStatus
+);
+
+// 5. WMS (Warehouse Management System) endpoints
+app.get(
+  "/api/v1/wms/parts",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getParts
+);
+
+app.get(
+  "/api/v1/wms/warehouses",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getWarehouses
+);
+
+app.get(
+  "/api/v1/wms/manufacturers",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getManufacturers
+);
+
+app.get(
+  "/api/v1/wms/farmers",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getFarmers
+);
+
+app.get(
+  "/api/v1/wms/engineers",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getEngineers
+);
+
+app.get(
+  "/api/v1/wms/pending-rmas",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getPendingRMAs
+);
+
+app.get(
+  "/api/v1/wms/challans",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getChallans
+);
+
+app.get(
+  "/api/v1/wms/stock",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getStock
+);
+
+app.get(
+  "/api/v1/wms/movements",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.getMovements
+);
+
+app.post(
+  "/api/v1/wms/movements",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.logMovement
+);
+
+app.delete(
+  "/api/v1/wms/movements/:id",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.deleteMovement
+);
+
+app.post(
+  "/api/v1/wms/clear-all",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.clearAll
+);
+
+app.post(
+  "/api/v1/wms/sync-requests",
+  authMiddleware.authenticateJWT,
+  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  wmsController.syncRequests
 );
 
 // Global Error Handler

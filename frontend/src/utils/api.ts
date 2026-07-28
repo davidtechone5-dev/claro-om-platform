@@ -10,6 +10,18 @@ function getHeaders(extraHeaders: Record<string, string> = {}) {
   };
 }
 
+// Interceptor wrapper to automatically handle 401 Unauthorized token expirations
+async function fetchWithAuth(url: string, init?: RequestInit) {
+  const headers = getHeaders(init?.headers as any);
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) {
+    localStorage.removeItem("claro_token");
+    localStorage.removeItem("claro_user");
+    window.location.reload();
+  }
+  return res;
+}
+
 export const api = {
   /**
    * Health & root verify
@@ -33,7 +45,7 @@ export const api = {
   },
 
   async me() {
-    const res = await fetch(`${API_BASE_URL}/auth/me`, { headers: getHeaders() });
+    const res = await fetchWithAuth(`${API_BASE_URL}/auth/me`);
     if (!res.ok) {
       throw new Error("Failed to load user profile");
     }
@@ -77,17 +89,24 @@ export const api = {
     if (eDate) url += `&endDate=${encodeURIComponent(eDate)}`;
     if (engId && engId !== "ALL") url += `&engineerId=${encodeURIComponent(engId)}`;
 
-    const res = await fetch(url, { headers: getHeaders() });
+    const res = await fetchWithAuth(url);
     if (!res.ok) {
       throw new Error(`Failed to load tickets: ${res.statusText}`);
     }
     return await res.json();
   },
 
+  async getTicketById(id: string) {
+    const res = await fetchWithAuth(`${API_BASE_URL}/tickets/${id}`);
+    if (!res.ok) {
+      throw new Error(`Failed to load ticket details: ${res.statusText}`);
+    }
+    return await res.json();
+  },
+
   async assignEngineer(ticketId: string, engineerId: string, remarks?: string) {
-    const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}/assign`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/tickets/${ticketId}/assign`, {
       method: "POST",
-      headers: getHeaders(),
       body: JSON.stringify({ engineerId, remarks })
     });
     if (!res.ok) {
@@ -98,9 +117,8 @@ export const api = {
   },
 
   async updateTicketStatus(ticketId: string, status: string, summary?: string) {
-    const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}/status`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/tickets/${ticketId}/status`, {
       method: "PATCH",
-      headers: getHeaders(),
       body: JSON.stringify({ status, summary })
     });
     if (!res.ok) {
@@ -110,23 +128,33 @@ export const api = {
     return await res.json();
   },
 
-  /**
-   * Engineers directory
-   */
   async getEngineers() {
-    // In our backend index.ts, we don't have an explicit route to list engineers,
-    // but we can query standard fields. Let's make sure it returns them.
-    // Wait, the backend has engineers model!
-    // Since we need to get list of engineers for dropdown, we can get it or mock.
-    // Let's call the endpoint or query.
-    // Wait, in backend, did we write an endpoint for engineers?
-    // Let's check backend index.ts. We didn't write GET /engineers!
-    // Wait, we can fetch all tickets and extract engineers, or we can add GET /engineers to index.ts!
-    // Adding GET /engineers to backend index.ts is a super simple edit that solves this.
-    // We will do it next. Let's assume we can fetch engineers from GET /api/v1/engineers.
-    const res = await fetch(`${API_BASE_URL}/engineers`, { headers: getHeaders() });
+    const res = await fetchWithAuth(`${API_BASE_URL}/engineers`);
     if (!res.ok) {
-      throw new Error(`Failed to fetch engineers: ${res.statusText}`);
+      throw new Error("Failed to fetch engineers");
+    }
+    return await res.json();
+  },
+
+  async addEngineer(data: any) {
+    const res = await fetchWithAuth(`${API_BASE_URL}/engineers`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to create engineer");
+    }
+    return await res.json();
+  },
+
+  async updateEngineerStatus(id: string, isActive: boolean) {
+    const res = await fetchWithAuth(`${API_BASE_URL}/engineers/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive })
+    });
+    if (!res.ok) {
+      throw new Error("Failed to update status");
     }
     return await res.json();
   },
@@ -138,7 +166,7 @@ export const api = {
     if (endDate) params.append("endDate", endDate);
     if (params.toString()) url += `?${params.toString()}`;
 
-    const res = await fetch(url, { headers: getHeaders() });
+    const res = await fetchWithAuth(url);
     if (!res.ok) {
       throw new Error("Failed to fetch engineer performance metrics");
     }
@@ -152,7 +180,7 @@ export const api = {
     if (endDate) params.append("endDate", endDate);
     if (params.toString()) url += `?${params.toString()}`;
 
-    const res = await fetch(url, { headers: getHeaders() });
+    const res = await fetchWithAuth(url);
     if (!res.ok) {
       throw new Error("Failed to fetch all engineers performance report");
     }
@@ -160,36 +188,134 @@ export const api = {
   },
 
   /**
-   * Material Requests (Warehouse operations)
+   * AMC & Reports
    */
-  async getMaterialRequests() {
-    const res = await fetch(`${API_BASE_URL}/material-requests`, { headers: getHeaders() });
+  async getAmcTickets() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/amc/tickets`);
     if (!res.ok) {
-      throw new Error("Failed to fetch material requests");
+      throw new Error("Failed to fetch AMC tickets");
     }
+    return await res.json();
+  },
+
+  async getAmcMetrics() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/amc/metrics`);
+    if (!res.ok) {
+      throw new Error("Failed to fetch AMC metrics");
+    }
+    return await res.json();
+  },
+
+  // Alias for compatibility with casing mismatch in components
+  async getAMCMetrics() {
+    return this.getAmcMetrics();
+  },
+
+  /**
+   * WMS endpoints
+   */
+  async getWmsParts() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/parts`);
+    if (!res.ok) throw new Error("Failed to fetch parts");
+    return await res.json();
+  },
+
+  async getWmsWarehouses() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/warehouses`);
+    if (!res.ok) throw new Error("Failed to fetch warehouses");
+    return await res.json();
+  },
+
+  async getWmsManufacturers() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/manufacturers`);
+    if (!res.ok) throw new Error("Failed to fetch manufacturers");
+    return await res.json();
+  },
+
+  async getWmsFarmers() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/farmers`);
+    if (!res.ok) throw new Error("Failed to fetch farmers");
+    return await res.json();
+  },
+
+  async getWmsEngineers() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/engineers`);
+    if (!res.ok) throw new Error("Failed to fetch engineers");
+    return await res.json();
+  },
+
+  async getWmsPendingRMAs(warehouseId: string) {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/pending-rmas?warehouseId=${encodeURIComponent(warehouseId)}`);
+    if (!res.ok) throw new Error("Failed to fetch pending RMAs");
+    return await res.json();
+  },
+
+  async getWmsChallans() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/challans`);
+    if (!res.ok) throw new Error("Failed to fetch challans");
+    return await res.json();
+  },
+
+  async getWmsStock(warehouseId: string) {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/stock?warehouseId=${encodeURIComponent(warehouseId)}`);
+    if (!res.ok) throw new Error("Failed to fetch WMS live stock");
+    return await res.json();
+  },
+
+  async getWmsMovements(warehouseId: string) {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/movements?warehouseId=${encodeURIComponent(warehouseId)}`);
+    if (!res.ok) throw new Error("Failed to fetch WMS movements ledger");
+    return await res.json();
+  },
+
+  async logWmsMovement(data: any) {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/movements`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Failed to log movement");
+    }
+    return await res.json();
+  },
+
+  async deleteWmsMovement(id: string) {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/movements/${id}`, {
+      method: "DELETE"
+    });
+    if (!res.ok) throw new Error("Failed to delete movement");
+    return await res.json();
+  },
+
+  async getMaterialRequests() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/material-requests`);
+    if (!res.ok) throw new Error("Failed to fetch material requests");
     return await res.json();
   },
 
   async updateMaterialStatus(id: string, status: string) {
-    const res = await fetch(`${API_BASE_URL}/material-requests/${id}/status`, {
+    const res = await fetchWithAuth(`${API_BASE_URL}/material-requests/${id}/status`, {
       method: "PATCH",
-      headers: getHeaders(),
       body: JSON.stringify({ status })
     });
-    if (!res.ok) {
-      throw new Error("Failed to update material status");
-    }
+    if (!res.ok) throw new Error("Failed to update status");
     return await res.json();
   },
 
-  /**
-   * AMC Metrics endpoint
-   */
-  async getAMCMetrics() {
-    const res = await fetch(`${API_BASE_URL}/amc/metrics`, { headers: getHeaders() });
-    if (!res.ok) {
-      throw new Error("Failed to fetch AMC metrics");
-    }
+  async clearWmsAll() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/clear-all`, {
+      method: "POST"
+    });
+    if (!res.ok) throw new Error("Failed to clear WMS data");
+    return await res.json();
+  },
+
+  async syncWmsRequests() {
+    const res = await fetchWithAuth(`${API_BASE_URL}/wms/sync-requests`, {
+      method: "POST"
+    });
+    if (!res.ok) throw new Error("Failed to sync sheets material requests");
     return await res.json();
   }
 };
