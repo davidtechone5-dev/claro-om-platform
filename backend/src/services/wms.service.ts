@@ -107,16 +107,35 @@ export const wmsService = {
 
     // 4. Stock by part (canonical catalog parts mapped with their ledger status counts)
     const parts = await this.getParts();
-    const stockByPart = await Promise.all(parts.map(async (part) => {
-      const fresh = await prisma.unitLedger.count({
-        where: { partCode: part.code, currentLocation: warehouseId, status: "Fresh" }
-      });
-      const faulty = await prisma.unitLedger.count({
-        where: { partCode: part.code, currentLocation: warehouseId, status: "Faulty-Received" }
-      });
-      const atManufacturer = await prisma.unitLedger.count({
-        where: { partCode: part.code, status: "At-Manufacturer" }
-      });
+
+    // Fetch all relevant ledger counts in a single group query
+    const ledgerCounts = await prisma.unitLedger.groupBy({
+      by: ['partCode', 'status', 'currentLocation'],
+      where: {
+        status: { in: ["Fresh", "Faulty-Received", "At-Manufacturer"] }
+      },
+      _count: {
+        serialNo: true
+      }
+    });
+
+    // Helper to extract counts from the grouped aggregation in Node memory
+    const getCount = (partCode: string, status: string, locationCheck?: string) => {
+      let sum = 0;
+      for (const row of ledgerCounts) {
+        if (row.partCode === partCode && row.status === status) {
+          if (locationCheck === undefined || row.currentLocation === locationCheck) {
+            sum += row._count.serialNo;
+          }
+        }
+      }
+      return sum;
+    };
+
+    const stockByPart = parts.map((part) => {
+      const fresh = getCount(part.code, "Fresh", warehouseId);
+      const faulty = getCount(part.code, "Faulty-Received", warehouseId);
+      const atManufacturer = getCount(part.code, "At-Manufacturer");
 
       return {
         code: part.code,
@@ -125,7 +144,7 @@ export const wmsService = {
         faulty,
         atManufacturer
       };
-    }));
+    });
 
     // 5. Overdue Alerts (RMA sent to manufacturer but not returned back within 15 days)
     const fifteenDaysAgo = new Date();

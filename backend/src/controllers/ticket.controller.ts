@@ -783,152 +783,168 @@ export const ticketController = {
         return { stateCode: "MH", stateName: "Maharashtra" };
       };
 
-      const engineerReports = await Promise.all(
-        engineers.map(async (eng) => {
-          const assignments = await prisma.ticketAssignment.findMany({
-            where: { engineerId: eng.id, deletedAt: null },
+      // Get all engineer IDs
+      const engineerIds = engineers.map(e => e.id);
+
+      // Fetch all assignments for all active engineers in a single batch query
+      const allAssignments = await prisma.ticketAssignment.findMany({
+        where: {
+          engineerId: { in: engineerIds },
+          deletedAt: null
+        },
+        include: {
+          ticket: {
             include: {
-              ticket: {
-                include: { 
-                  complaint: {
-                    include: {
-                      masterInstallation: { include: { state: true, district: { include: { state: true } } } }
-                    }
-                  },
-                  serviceReports: { where: { deletedAt: null }, orderBy: { reportDate: "desc" } },
-                  initialVisits: { where: { deletedAt: null }, orderBy: { visitDate: "desc" } }
+              complaint: {
+                include: {
+                  masterInstallation: { include: { state: true, district: { include: { state: true } } } }
+                }
+              },
+              serviceReports: { where: { deletedAt: null }, orderBy: { reportDate: "desc" } },
+              initialVisits: { where: { deletedAt: null }, orderBy: { visitDate: "desc" } }
+            }
+          }
+        }
+      });
+
+      // Group assignments by engineer ID in memory
+      const assignmentsByEngineer = new Map<string, typeof allAssignments>();
+      allAssignments.forEach(a => {
+        if (!assignmentsByEngineer.has(a.engineerId)) {
+          assignmentsByEngineer.set(a.engineerId, []);
+        }
+        assignmentsByEngineer.get(a.engineerId)!.push(a);
+      });
+
+      const engineerReports = engineers.map((eng) => {
+        const assignments = assignmentsByEngineer.get(eng.id) || [];
+
+        const getResolutionDate = (ticket: any): Date | null => {
+          if (ticket.status !== "RESOLVED") return null;
+          if (ticket.serviceReports?.[0]?.reportDate) return new Date(ticket.serviceReports[0].reportDate);
+          return ticket.updatedAt ? new Date(ticket.updatedAt) : null;
+        };
+
+        const getVisitDate = (ticket: any): Date | null => {
+          if (ticket.initialVisits?.[0]?.visitDate) return new Date(ticket.initialVisits[0].visitDate);
+          return null;
+        };
+
+        const getAssignmentDate = (a: any): Date | null => {
+          if (a.assignedAt) return new Date(a.assignedAt);
+          return null;
+        };
+
+        const allTickets = assignments.map(a => ({
+          ...a.ticket,
+          assignedAt: getAssignmentDate(a),
+          resolutionDate: getResolutionDate(a.ticket),
+          visitDate: getVisitDate(a.ticket)
+        }));
+
+        const totalAssigned = allTickets.length;
+        const totalResolved = allTickets.filter(t => t.status === "RESOLVED").length;
+
+        // Date window filtered tickets for assignment
+        const windowTickets = allTickets.filter(t => {
+          const time = t.assignedAt ? new Date(t.assignedAt).getTime() : (t.createdAt ? new Date(t.createdAt).getTime() : 0);
+          return time >= periodStart.getTime() && time <= periodEnd.getTime();
+        });
+
+        const targetTickets = windowTickets;
+
+        const allCount = targetTickets.length;
+        const receivedCount = targetTickets.filter(t => t.status === "RECEIVED").length;
+        const assignedCount = targetTickets.filter(t => t.status === "ASSIGNED").length;
+        const materialReqCount = targetTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
+        const insuranceCount = targetTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
+        const manualAssignCount = targetTickets.filter(t => {
+          if (t.metadata && typeof t.metadata === "object") {
+            const meta = t.metadata as Record<string, any>;
+            const method = meta["Assignment Method"] ?? meta["assignment_method"];
+            return String(method || "").trim().toLowerCase() === "manual";
+          }
+          return false;
+        }).length;
+
+        const visitedCount = allTickets.filter((ticket) => {
+          if (!ticket.visitDate) return false;
+
+          const visitDate = new Date(ticket.visitDate);
+
+          if (Number.isNaN(visitDate.getTime())) return false;
+
+          return (
+            visitDate.getTime() >= periodStart.getTime() &&
+            visitDate.getTime() <= periodEnd.getTime()
+          );
+        }).length;
+
+        const resolvedCount = allTickets.filter((ticket) => {
+          if (!ticket.resolutionDate) return false;
+
+          const resolutionDate = new Date(ticket.resolutionDate);
+
+          if (Number.isNaN(resolutionDate.getTime())) return false;
+
+          return (
+            resolutionDate.getTime() >= periodStart.getTime() &&
+            resolutionDate.getTime() <= periodEnd.getTime()
+          );
+        }).length;
+
+        // Calculate average TAT for resolved tickets (preferring Google Sheet "Overall TAT (days)")
+        let tatSum = 0;
+        let validTatCount = 0;
+        allTickets.forEach(t => {
+          if (t.status === "RESOLVED") {
+            let overallTat: number | null = null;
+            
+            if (t.metadata && typeof t.metadata === "object") {
+              const meta = t.metadata as Record<string, any>;
+              const val = meta["Overall TAT (days)"] ?? meta["overall_tat_days"] ?? meta["Overall TAT"] ?? meta["overall_tat"];
+              if (val !== undefined && val !== null && val !== "") {
+                const num = parseFloat(val);
+                if (!isNaN(num) && num >= 0) {
+                  overallTat = num;
                 }
               }
             }
-          });
 
-          const getResolutionDate = (ticket: any): Date | null => {
-            if (ticket.status !== "RESOLVED") return null;
-            if (ticket.serviceReports?.[0]?.reportDate) return new Date(ticket.serviceReports[0].reportDate);
-            return ticket.updatedAt ? new Date(ticket.updatedAt) : null;
-          };
-
-          const getVisitDate = (ticket: any): Date | null => {
-            if (ticket.initialVisits?.[0]?.visitDate) return new Date(ticket.initialVisits[0].visitDate);
-            return null;
-          };
-
-          const getAssignmentDate = (a: any): Date | null => {
-            if (a.assignedAt) return new Date(a.assignedAt);
-            return null;
-          };
-
-          const allTickets = assignments.map(a => ({
-            ...a.ticket,
-            assignedAt: getAssignmentDate(a),
-            resolutionDate: getResolutionDate(a.ticket),
-            visitDate: getVisitDate(a.ticket)
-          }));
-
-          const totalAssigned = allTickets.length;
-          const totalResolved = allTickets.filter(t => t.status === "RESOLVED").length;
-
-          // Date window filtered tickets for assignment
-          const windowTickets = allTickets.filter(t => {
-            const time = t.assignedAt ? new Date(t.assignedAt).getTime() : (t.createdAt ? new Date(t.createdAt).getTime() : 0);
-            return time >= periodStart.getTime() && time <= periodEnd.getTime();
-          });
-
-          const targetTickets = windowTickets;
-
-          const allCount = targetTickets.length;
-          const receivedCount = targetTickets.filter(t => t.status === "RECEIVED").length;
-          const assignedCount = targetTickets.filter(t => t.status === "ASSIGNED").length;
-          const materialReqCount = targetTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
-          const insuranceCount = targetTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
-          const manualAssignCount = targetTickets.filter(t => {
-            if (t.metadata && typeof t.metadata === "object") {
-              const meta = t.metadata as Record<string, any>;
-              const method = meta["Assignment Method"] ?? meta["assignment_method"];
-              return String(method || "").trim().toLowerCase() === "manual";
+            if (overallTat !== null) {
+              tatSum += overallTat;
+              validTatCount++;
             }
-            return false;
-          }).length;
+          }
+        });
+        const avgTatNum = validTatCount > 0 ? parseFloat((tatSum / validTatCount).toFixed(1)) : 0;
 
-          const visitedCount = allTickets.filter((ticket) => {
-            if (!ticket.visitDate) return false;
+        const assignedInWindow = windowTickets.length;
+        const resolvedInWindow = resolvedCount;
 
-            const visitDate = new Date(ticket.visitDate);
+        const { stateCode, stateName } = resolveEngineerState(eng, assignments);
 
-            if (Number.isNaN(visitDate.getTime())) return false;
-
-            return (
-              visitDate.getTime() >= periodStart.getTime() &&
-              visitDate.getTime() <= periodEnd.getTime()
-            );
-          }).length;
-
-          const resolvedCount = allTickets.filter((ticket) => {
-            if (!ticket.resolutionDate) return false;
-
-            const resolutionDate = new Date(ticket.resolutionDate);
-
-            if (Number.isNaN(resolutionDate.getTime())) return false;
-
-            return (
-              resolutionDate.getTime() >= periodStart.getTime() &&
-              resolutionDate.getTime() <= periodEnd.getTime()
-            );
-          }).length;
-
-           // Calculate average TAT for resolved tickets (preferring Google Sheet "Overall TAT (days)")
-           let tatSum = 0;
-           let validTatCount = 0;
-           allTickets.forEach(t => {
-             if (t.status === "RESOLVED") {
-               let overallTat: number | null = null;
-               
-               if (t.metadata && typeof t.metadata === "object") {
-                 const meta = t.metadata as Record<string, any>;
-                 const val = meta["Overall TAT (days)"] ?? meta["overall_tat_days"] ?? meta["Overall TAT"] ?? meta["overall_tat"];
-                 if (val !== undefined && val !== null && val !== "") {
-                   const num = parseFloat(val);
-                   if (!isNaN(num) && num >= 0) {
-                     overallTat = num;
-                   }
-                 }
-               }
-
-               if (overallTat !== null) {
-                 tatSum += overallTat;
-                 validTatCount++;
-               }
-             }
-           });
-           const avgTatNum = validTatCount > 0 ? parseFloat((tatSum / validTatCount).toFixed(1)) : 0;
-
-          const assignedInWindow = windowTickets.length;
-          const resolvedInWindow = resolvedCount;
-
-          const { stateCode, stateName } = resolveEngineerState(eng, assignments);
-
-          return {
-            id: eng.id,
-            name: eng.name,
-            stateCode,
-            stateName,
-            allCount,
-            receivedCount,
-            assignedCount,
-            visitedCount,
-            materialReqCount,
-            insuranceCount,
-            resolvedCount,
-            manualAssignCount,
-            totalAssigned,
-            totalResolved,
-            avgTat: `${avgTatNum} Days`,
-            avgTatNum,
-            assignedInWindow,
-            resolvedInWindow
-          };
-        })
-      );
+        return {
+          id: eng.id,
+          name: eng.name,
+          stateCode,
+          stateName,
+          allCount,
+          receivedCount,
+          assignedCount,
+          visitedCount,
+          materialReqCount,
+          insuranceCount,
+          resolvedCount,
+          manualAssignCount,
+          totalAssigned,
+          totalResolved,
+          avgTat: `${avgTatNum} Days`,
+          avgTatNum,
+          assignedInWindow,
+          resolvedInWindow
+        };
+      });
 
       // Group engineerReports by normalized name
       const deduplicatedMap = new Map<string, any>();
