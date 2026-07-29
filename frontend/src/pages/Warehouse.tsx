@@ -419,7 +419,7 @@ export function Warehouse() {
         </div>
 
         <div style={styles.headerRight}>
-          {(currentUser?.role === "Admin" || currentUser?.role === "Warehouse") && (
+          {currentUser?.role === "Warehouse" && (
             <button 
               type="button" 
               onClick={handleWipeAllWms}

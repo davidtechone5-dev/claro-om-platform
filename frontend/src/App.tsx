@@ -154,7 +154,7 @@ function App() {
             />
             <Route 
               path="/warehouse" 
-              element={isEngineer ? <Navigate to="/" replace /> : <Warehouse />} 
+              element={isWarehouse ? <Warehouse /> : <Navigate to="/" replace />} 
             />
             <Route 
               path="/amc" 

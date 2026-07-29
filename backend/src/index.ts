@@ -141,14 +141,14 @@ app.get(
 app.get(
   "/api/v1/material-requests",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   ticketController.listMaterialRequests
 );
 
 app.patch(
   "/api/v1/material-requests/:id/status",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   ticketController.updateMaterialRequestStatus
 );
 
@@ -156,91 +156,91 @@ app.patch(
 app.get(
   "/api/v1/wms/parts",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getParts
 );
 
 app.get(
   "/api/v1/wms/warehouses",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getWarehouses
 );
 
 app.get(
   "/api/v1/wms/manufacturers",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getManufacturers
 );
 
 app.get(
   "/api/v1/wms/farmers",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getFarmers
 );
 
 app.get(
   "/api/v1/wms/engineers",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getEngineers
 );
 
 app.get(
   "/api/v1/wms/pending-rmas",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getPendingRMAs
 );
 
 app.get(
   "/api/v1/wms/challans",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getChallans
 );
 
 app.get(
   "/api/v1/wms/stock",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getStock
 );
 
 app.get(
   "/api/v1/wms/movements",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.getMovements
 );
 
 app.post(
   "/api/v1/wms/movements",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.logMovement
 );
 
 app.delete(
   "/api/v1/wms/movements/:id",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.deleteMovement
 );
 
 app.post(
   "/api/v1/wms/clear-all",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.clearAll
 );
 
 app.post(
   "/api/v1/wms/sync-requests",
   authMiddleware.authenticateJWT,
-  authMiddleware.requireRole(["Admin", "Operations", "Warehouse"]),
+  authMiddleware.requireRole(["Warehouse"]),
   wmsController.syncRequests
 );
 
