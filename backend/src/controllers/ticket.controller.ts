@@ -5,25 +5,25 @@ import { AuthenticatedRequest } from "../middleware/auth.js";
 const getServiceReportDateTime = (t: any): Date | null => {
   if (!t.metadata || typeof t.metadata !== "object") return null;
   const meta = t.metadata as Record<string, any>;
-  
+
   const dateValue = meta["Service Report Date"] ?? meta["service_report_date"];
   const timeValue = meta["Service Report Timestamp"] ?? meta["service_report_timestamp"] ?? meta["Service Report Time"] ?? meta["service_report_time"];
-  
+
   if (!dateValue) return null;
-  
+
   const dateStr = String(dateValue).trim();
   const timeStr = timeValue ? String(timeValue).trim() : "00:00:00";
-  
+
   const dateMatch = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (!dateMatch) return null;
-  
+
   const [, day, month, year] = dateMatch;
   const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  
+
   const hour = timeMatch ? Number(timeMatch[1]) : 0;
   const minute = timeMatch ? Number(timeMatch[2]) : 0;
   const second = timeMatch ? Number(timeMatch[3] ?? 0) : 0;
-  
+
   const result = new Date(Number(year), Number(month) - 1, Number(day), hour, minute, second);
   return Number.isNaN(result.getTime()) ? null : result;
 };
@@ -31,25 +31,25 @@ const getServiceReportDateTime = (t: any): Date | null => {
 const getAssignmentDateTime = (t: any): Date | null => {
   if (!t.metadata || typeof t.metadata !== "object") return null;
   const meta = t.metadata as Record<string, any>;
-  
+
   const dateValue = meta["Assignment Date"] ?? meta["assigned_date"] ?? meta["Created At"] ?? meta["Date"] ?? meta["date"];
   const timeValue = meta["Assignment Time"] ?? meta["assigned_time"] ?? meta["Timestamp"] ?? meta["Time"];
-  
+
   if (!dateValue) return null;
-  
+
   const dateStr = String(dateValue).trim();
   const timeStr = timeValue ? String(timeValue).trim() : "00:00:00";
-  
+
   const dateMatch = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (!dateMatch) return null;
-  
+
   const [, day, month, year] = dateMatch;
   const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  
+
   const hour = timeMatch ? Number(timeMatch[1]) : 0;
   const minute = timeMatch ? Number(timeMatch[2]) : 0;
   const second = timeMatch ? Number(timeMatch[3] ?? 0) : 0;
-  
+
   const result = new Date(Number(year), Number(month) - 1, Number(day), hour, minute, second);
   return Number.isNaN(result.getTime()) ? null : result;
 };
@@ -362,8 +362,8 @@ export const ticketController = {
   async listEngineers(req: any, res: Response) {
     try {
       const engineers = await prisma.engineer.findMany({
-        where: { 
-          isActive: true, 
+        where: {
+          isActive: true,
           deletedAt: null,
           NOT: {
             OR: [
@@ -383,10 +383,10 @@ export const ticketController = {
         let stateName = eng.state?.name || eng.district?.state?.name;
         if (!stateName) {
           if (
-            normKey.includes("sikander") || 
-            normKey.includes("anish") || 
-            normKey.includes("sushil") || 
-            normKey.includes("avinash") || 
+            normKey.includes("sikander") ||
+            normKey.includes("anish") ||
+            normKey.includes("sushil") ||
+            normKey.includes("avinash") ||
             normKey.includes("narender") ||
             normKey.includes("bhagwan") ||
             normKey.includes("kiran") ||
@@ -530,37 +530,30 @@ export const ticketController = {
       const assignedCount = tickets.filter(t => t.status === "ASSIGNED").length;
       const materialReqCount = tickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
       const insuranceCount = tickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
-      const manualAssignCount = tickets.filter(t => {
-        if (t.metadata && typeof t.metadata === "object") {
-          const meta = t.metadata as Record<string, any>;
-          const method = meta["Assignment Method"] ?? meta["assignment_method"];
-          return String(method || "").trim().toLowerCase() === "manual";
-        }
-        return false;
-      }).length;
+      const manualAssignCount = tickets.filter(t => t.status === "MANUAL_ASSIGNMENT_REQUIRED").length;
 
       // Calculate Average Turn-Around-Time (TAT) in days (preferring Google Sheet "Overall TAT (days)")
       let tatSum = 0;
       let validTatCount = 0;
-       resolvedTickets.forEach(t => {
-         let overallTat: number | null = null;
- 
-         if (t.metadata && typeof t.metadata === "object") {
-           const meta = t.metadata as Record<string, any>;
-           const val = meta["Overall TAT (days)"] ?? meta["overall_tat_days"] ?? meta["Overall TAT"] ?? meta["overall_tat"];
-           if (val !== undefined && val !== null && val !== "") {
-             const num = parseFloat(val);
-             if (!isNaN(num) && num >= 0) {
-               overallTat = num;
-             }
-           }
-         }
- 
-         if (overallTat !== null) {
-           tatSum += overallTat;
-           validTatCount++;
-         }
-       });
+      resolvedTickets.forEach(t => {
+        let overallTat: number | null = null;
+
+        if (t.metadata && typeof t.metadata === "object") {
+          const meta = t.metadata as Record<string, any>;
+          const val = meta["Overall TAT (days)"] ?? meta["overall_tat_days"] ?? meta["Overall TAT"] ?? meta["overall_tat"];
+          if (val !== undefined && val !== null && val !== "") {
+            const num = parseFloat(val);
+            if (!isNaN(num) && num >= 0) {
+              overallTat = num;
+            }
+          }
+        }
+
+        if (overallTat !== null) {
+          tatSum += overallTat;
+          validTatCount++;
+        }
+      });
       const avgTat = validTatCount > 0 ? parseFloat((tatSum / validTatCount).toFixed(1)) : 0;
 
       // Group tickets by status
@@ -582,8 +575,8 @@ export const ticketController = {
       tickets.forEach(t => {
         const assignedTime = new Date(t.assignedAt).getTime();
         if (t.status === "RESOLVED") {
-          const resTime = t.serviceReports?.[0]?.reportDate 
-            ? new Date(t.serviceReports[0].reportDate).getTime() 
+          const resTime = t.serviceReports?.[0]?.reportDate
+            ? new Date(t.serviceReports[0].reportDate).getTime()
             : new Date(t.updatedAt).getTime();
           if ((resTime - assignedTime) / (1000 * 60 * 60 * 24) > 7) {
             slaBreachedCount++;
@@ -643,8 +636,8 @@ export const ticketController = {
         },
         tickets: allTickets.map(t => {
           const assignTime = new Date(t.assignedAt).getTime();
-          const resTime = t.serviceReports?.[0]?.reportDate 
-            ? new Date(t.serviceReports[0].reportDate).getTime() 
+          const resTime = t.serviceReports?.[0]?.reportDate
+            ? new Date(t.serviceReports[0].reportDate).getTime()
             : (t.status === "RESOLVED" ? new Date(t.updatedAt).getTime() : null);
           const tatDays = resTime ? parseFloat(((resTime - assignTime) / (1000 * 60 * 60 * 24)).toFixed(1)) : null;
 
@@ -757,8 +750,8 @@ export const ticketController = {
         }
 
         for (const a of assignments) {
-          const ticketState = a.ticket?.complaint?.masterInstallation?.state?.name || 
-                             a.ticket?.complaint?.district?.state?.name;
+          const ticketState = a.ticket?.complaint?.masterInstallation?.state?.name ||
+            a.ticket?.complaint?.district?.state?.name;
           if (ticketState) {
             const code = helperStateCode(ticketState);
             if (code !== "OTH") return { stateCode: code, stateName: ticketState };
@@ -767,10 +760,10 @@ export const ticketController = {
 
         const norm = eng.name?.trim()?.toLowerCase() || "";
         if (
-          norm.includes("sikander") || 
-          norm.includes("anish") || 
-          norm.includes("sushil") || 
-          norm.includes("avinash") || 
+          norm.includes("sikander") ||
+          norm.includes("anish") ||
+          norm.includes("sushil") ||
+          norm.includes("avinash") ||
           norm.includes("narender") ||
           norm.includes("bhagwan") ||
           norm.includes("kiran") ||
@@ -858,15 +851,7 @@ export const ticketController = {
         const assignedCount = targetTickets.filter(t => t.status === "ASSIGNED").length;
         const materialReqCount = targetTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
         const insuranceCount = targetTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
-        const manualAssignCount = targetTickets.filter(t => {
-          if (t.metadata && typeof t.metadata === "object") {
-            const meta = t.metadata as Record<string, any>;
-            const method = meta["Assignment Method"] ?? meta["assignment_method"];
-            return String(method || "").trim().toLowerCase() === "manual";
-          }
-          return false;
-        }).length;
-
+        const manualAssignCount = targetTickets.filter(t => t.status === "MANUAL_ASSIGNMENT_REQUIRED").length;
         const visitedCount = allTickets.filter((ticket) => {
           if (!ticket.visitDate) return false;
 
@@ -899,7 +884,7 @@ export const ticketController = {
         allTickets.forEach(t => {
           if (t.status === "RESOLVED") {
             let overallTat: number | null = null;
-            
+
             if (t.metadata && typeof t.metadata === "object") {
               const meta = t.metadata as Record<string, any>;
               const val = meta["Overall TAT (days)"] ?? meta["overall_tat_days"] ?? meta["Overall TAT"] ?? meta["overall_tat"];
@@ -1206,14 +1191,14 @@ export const ticketController = {
       installationDates.forEach((inst) => {
         if (!inst.installationDate) return;
         const instDate = new Date(inst.installationDate);
-        
+
         const diffMs = now.getTime() - instDate.getTime();
         const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.4);
         const cycles = Math.ceil(diffMonths / 6);
         const nextRenewal = new Date(instDate.getTime() + cycles * 6 * 30.4 * 24 * 60 * 60 * 1000);
-        
+
         const daysToRenewal = Math.round((nextRenewal.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         if (daysToRenewal > 0 && daysToRenewal <= 30) {
           next30++;
         } else if (daysToRenewal > 30 && daysToRenewal <= 60) {
@@ -1250,7 +1235,7 @@ export const ticketController = {
 
       const complaintsPostAmc = recentVisits.map((t) => {
         const visit = t.initialVisits[0];
-        const daysSinceVisit = visit 
+        const daysSinceVisit = visit
           ? Math.round((t.createdAt.getTime() - visit.visitDate.getTime()) / (1000 * 60 * 60 * 24))
           : 0;
         return {
