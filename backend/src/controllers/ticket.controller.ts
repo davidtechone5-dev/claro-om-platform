@@ -467,7 +467,7 @@ export const ticketController = {
       });
 
       const getResolutionDate = (ticket: any): Date | null => {
-        if (ticket.status !== "RESOLVED") return null;
+        if (ticket.status !== "RESOLVED" && ticket.status !== "OUT_OF_SCOPE") return null;
         if (ticket.serviceReports?.[0]?.reportDate) return new Date(ticket.serviceReports[0].reportDate);
         return ticket.updatedAt ? new Date(ticket.updatedAt) : null;
       };
@@ -509,9 +509,9 @@ export const ticketController = {
       });
       const totalResolved = resolvedTickets.length;
 
-      const activeTickets = allTickets.filter(t => t.status !== "RESOLVED").length;
+      const activeTickets = allTickets.filter(t => t.status !== "RESOLVED" && t.status !== "OUT_OF_SCOPE").length;
       const allTimeAssigned = allTickets.length;
-      const allTimeResolved = allTickets.filter(t => t.status === "RESOLVED").length;
+      const allTimeResolved = allTickets.filter(t => t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE").length;
       const resolutionRate = allTimeAssigned > 0 ? Math.round((allTimeResolved / allTimeAssigned) * 100) : 0;
 
       const visitsDone = allTickets.filter((ticket) => {
@@ -616,7 +616,7 @@ export const ticketController = {
           totalTickets,
           totalAssigned: totalTickets,
           allTimeAssigned: allTickets.length,
-          allTimeResolved: allTickets.filter(t => t.status === "RESOLVED").length,
+          allTimeResolved: allTickets.filter(t => t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE").length,
           visitsDone,
           totalResolved,
           activeTickets,
@@ -638,7 +638,7 @@ export const ticketController = {
           const assignTime = new Date(t.assignedAt).getTime();
           const resTime = t.serviceReports?.[0]?.reportDate
             ? new Date(t.serviceReports[0].reportDate).getTime()
-            : (t.status === "RESOLVED" ? new Date(t.updatedAt).getTime() : null);
+            : ((t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE") ? new Date(t.updatedAt).getTime() : null);
           const tatDays = resTime ? parseFloat(((resTime - assignTime) / (1000 * 60 * 60 * 24)).toFixed(1)) : null;
 
           return {
@@ -650,7 +650,7 @@ export const ticketController = {
             createdAt: t.createdAt,
             initialVisitDate: t.initialVisits?.[0]?.visitDate || null,
             serviceReportDate: t.serviceReports?.[0]?.reportDate || null,
-            resolvedAt: t.serviceReports?.[0]?.reportDate || (t.status === "RESOLVED" ? t.updatedAt : null),
+            resolvedAt: t.serviceReports?.[0]?.reportDate || ((t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE") ? t.updatedAt : null),
             materialRequestedAt: t.status === "MATERIAL_REQUESTED" ? t.assignedAt : null,
             materialRequestDate: t.status === "MATERIAL_REQUESTED" ? t.assignedAt : null,
             materialStatusDate: t.status === "MATERIAL_REQUESTED" ? t.assignedAt : null,
@@ -813,7 +813,7 @@ export const ticketController = {
         const assignments = assignmentsByEngineer.get(eng.id) || [];
 
         const getResolutionDate = (ticket: any): Date | null => {
-          if (ticket.status !== "RESOLVED") return null;
+          if (ticket.status !== "RESOLVED" && ticket.status !== "OUT_OF_SCOPE") return null;
           if (ticket.serviceReports?.[0]?.reportDate) return new Date(ticket.serviceReports[0].reportDate);
           return ticket.updatedAt ? new Date(ticket.updatedAt) : null;
         };
@@ -836,7 +836,7 @@ export const ticketController = {
         }));
 
         const totalAssigned = allTickets.length;
-        const totalResolved = allTickets.filter(t => t.status === "RESOLVED").length;
+        const totalResolved = allTickets.filter(t => t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE").length;
 
         // Date window filtered tickets for assignment
         const windowTickets = allTickets.filter(t => {
@@ -882,7 +882,7 @@ export const ticketController = {
         let tatSum = 0;
         let validTatCount = 0;
         allTickets.forEach(t => {
-          if (t.status === "RESOLVED") {
+          if (t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE") {
             let overallTat: number | null = null;
 
             if (t.metadata && typeof t.metadata === "object") {

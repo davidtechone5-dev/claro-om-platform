@@ -80,7 +80,7 @@ export function StateReport() {
   );
 
   const totalTickets = stateTickets.length;
-  const resolvedTickets = stateTickets.filter(t => t.status === "RESOLVED");
+  const resolvedTickets = stateTickets.filter(t => t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE");
   const totalResolved = resolvedTickets.length;
   const activeTickets = totalTickets - totalResolved;
   
@@ -109,7 +109,7 @@ export function StateReport() {
   // SLA Warnings inside state (created > 7 days ago and not resolved)
   const now = new Date();
   const slaBreachedCount = stateTickets.filter(t => {
-    if (t.status === "RESOLVED") return false;
+    if (t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE") return false;
     const diffDays = Math.abs(now.getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60 * 24);
     return diffDays > 7;
   }).length;
@@ -118,7 +118,7 @@ export function StateReport() {
   const stateEngineersList = engineers.map(eng => {
     const engTickets = stateTickets.filter(t => t.assignments?.[0]?.engineer?.id === eng.id);
     const totalAssignedInState = engTickets.length;
-    const resolvedInState = engTickets.filter(t => t.status === "RESOLVED").length;
+    const resolvedInState = engTickets.filter(t => t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE").length;
     const activeInState = totalAssignedInState - resolvedInState;
     
     const engResRate = totalAssignedInState > 0 ? (resolvedInState / totalAssignedInState) * 100 : 0;

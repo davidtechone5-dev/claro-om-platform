@@ -81,7 +81,7 @@ export const assignmentService = {
             engineerId: eng.id,
             ticket: {
               status: {
-                notIn: ["RESOLVED", "CLOSED", "ARCHIVED"]
+                notIn: ["RESOLVED", "CLOSED", "ARCHIVED", "OUT_OF_SCOPE"]
               },
               deletedAt: null
             },
