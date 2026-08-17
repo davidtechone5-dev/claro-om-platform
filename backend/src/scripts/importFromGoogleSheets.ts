@@ -41,17 +41,18 @@ async function run() {
   try {
     console.log("🗑 Clearing old imported data...");
 
-    // Delete child tables first
-    await prisma.ticketHistory.deleteMany();
-    await prisma.materialRequestItem.deleteMany();
-    await prisma.materialRequest.deleteMany();
-    await prisma.serviceReport.deleteMany();
-    await prisma.initialVisit.deleteMany();
-    await prisma.ticketAssignment.deleteMany();
-
-    // Delete main tables
-    await prisma.ticket.deleteMany();
-    await prisma.complaint.deleteMany();
+    // Delete child and main tables in an atomic transaction to prevent foreign key issues
+    await prisma.$transaction([
+      prisma.ticketHistory.deleteMany(),
+      prisma.materialRequestItem.deleteMany(),
+      prisma.materialRequest.deleteMany(),
+      prisma.serviceReport.deleteMany(),
+      prisma.initialVisit.deleteMany(),
+      prisma.ticketAssignment.deleteMany(),
+      prisma.insuranceClaim.deleteMany(),
+      prisma.ticket.deleteMany(),
+      prisma.complaint.deleteMany(),
+    ]);
 
     console.log("✅ Old ticket data cleared.");
 
