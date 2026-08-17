@@ -66,6 +66,20 @@ const endOfDay = (date: Date): Date => {
   return value;
 };
 
+const parseISTStartOfDay = (dateStr: string): Date => {
+  const parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3) return new Date(dateStr);
+  const utcMs = Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0) - (5.5 * 60 * 60 * 1000);
+  return new Date(utcMs);
+};
+
+const parseISTEndOfDay = (dateStr: string): Date => {
+  const parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3) return new Date(dateStr);
+  const utcMs = Date.UTC(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999) - (5.5 * 60 * 60 * 1000);
+  return new Date(utcMs);
+};
+
 export const ticketController = {
   /**
    * List tickets with pagination & filters (e.g., status, priority)
@@ -93,14 +107,10 @@ export const ticketController = {
     if (startDate || endDate) {
       whereClause.createdAt = {};
       if (startDate) {
-        const p = startDate.toString().split("-").map(Number);
-        if (p.length === 3) whereClause.createdAt.gte = new Date(p[0], p[1] - 1, p[2], 0, 0, 0, 0);
-        else whereClause.createdAt.gte = new Date(startDate.toString());
+        whereClause.createdAt.gte = parseISTStartOfDay(startDate.toString());
       }
       if (endDate) {
-        const p = endDate.toString().split("-").map(Number);
-        if (p.length === 3) whereClause.createdAt.lte = new Date(p[0], p[1] - 1, p[2], 23, 59, 59, 999);
-        else whereClause.createdAt.lte = new Date(endDate.toString());
+        whereClause.createdAt.lte = parseISTEndOfDay(endDate.toString());
       }
     }
 
@@ -438,18 +448,8 @@ export const ticketController = {
         return res.status(404).json({ detail: `Engineer ${id} not found.` });
       }
 
-      let startFilter: Date | null = null;
-      let endFilter: Date | null = null;
-      if (startDate) {
-        const p = startDate.toString().split("-").map(Number);
-        if (p.length === 3) startFilter = new Date(p[0], p[1] - 1, p[2], 0, 0, 0, 0);
-        else startFilter = new Date(startDate.toString());
-      }
-      if (endDate) {
-        const p = endDate.toString().split("-").map(Number);
-        if (p.length === 3) endFilter = new Date(p[0], p[1] - 1, p[2], 23, 59, 59, 999);
-        else endFilter = new Date(endDate.toString());
-      }
+      const startFilter = startDate ? parseISTStartOfDay(startDate.toString()) : null;
+      const endFilter = endDate ? parseISTEndOfDay(endDate.toString()) : null;
 
       // Fetch assignments for this engineer
       const assignmentWhere: any = { engineerId: id, deletedAt: null };
@@ -484,8 +484,8 @@ export const ticketController = {
         visitDate: getVisitDate(a.ticket)
       }));
 
-      const periodStart = startFilter ? startOfDay(startFilter) : new Date(0);
-      const periodEnd = endFilter ? endOfDay(endFilter) : (() => {
+      const periodStart = startFilter || new Date(0);
+      const periodEnd = endFilter || (() => {
         const d = new Date();
         d.setFullYear(d.getFullYear() + 100);
         return d;
@@ -679,29 +679,15 @@ export const ticketController = {
     const { startDate, endDate } = req.query;
 
     try {
-      let startFilter: Date;
-      let endFilter: Date;
-
-      if (startDate) {
-        const p = startDate.toString().split("-").map(Number);
-        if (p.length === 3) startFilter = new Date(p[0], p[1] - 1, p[2], 0, 0, 0, 0);
-        else startFilter = new Date(startDate.toString());
-      } else {
-        startFilter = new Date(0);
-      }
-
-      if (endDate) {
-        const p = endDate.toString().split("-").map(Number);
-        if (p.length === 3) endFilter = new Date(p[0], p[1] - 1, p[2], 23, 59, 59, 999);
-        else endFilter = new Date(endDate.toString());
-      } else {
+      const startFilter = startDate ? parseISTStartOfDay(startDate.toString()) : new Date(0);
+      const endFilter = endDate ? parseISTEndOfDay(endDate.toString()) : (() => {
         const d = new Date();
         d.setFullYear(d.getFullYear() + 100);
-        endFilter = d;
-      }
+        return d;
+      })();
 
-      const periodStart = startOfDay(startFilter);
-      const periodEnd = endOfDay(endFilter);
+      const periodStart = startFilter;
+      const periodEnd = endFilter;
 
       const beforeDate = new Date(startFilter);
       beforeDate.setDate(beforeDate.getDate() - 27);
