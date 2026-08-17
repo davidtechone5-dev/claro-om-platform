@@ -49,7 +49,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
     async function loadDashboardData() {
       setLoading(true);
       try {
-        const ticketRes = await api.getTickets({ limit: 1000 });
+        const ticketRes = await api.getTickets({ limit: 10000 });
         if (ticketRes && ticketRes.tickets) {
           setTickets(ticketRes.tickets);
         }

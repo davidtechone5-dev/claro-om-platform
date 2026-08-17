@@ -25,8 +25,8 @@ export function StateReport() {
     async function loadAllData() {
       try {
         setLoading(true);
-        // Load up to 1000 tickets to compute full state metrics
-        const ticketsData = await api.getTickets("ALL", undefined, undefined, 1000, 0);
+        // Load up to 10000 tickets to compute full state metrics
+        const ticketsData = await api.getTickets("ALL", undefined, undefined, 10000, 0);
         setTickets(ticketsData.tickets || []);
 
         const engineersData = await api.getEngineers();
