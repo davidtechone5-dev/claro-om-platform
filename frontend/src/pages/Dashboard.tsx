@@ -115,7 +115,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
   ).length;
 
   const needsAssignCount = filteredTickets.filter(
-    t => (t.status === "MANUAL_ASSIGNMENT_REQUIRED" || !t.assignments?.length) &&
+    t => (t.status === "MANUAL_ASSIGNMENT_REQUIRED" || (t.status === "RECEIVED" && !t.assignments?.length)) &&
       t.status !== "RESOLVED" &&
       t.status !== "ON_HOLD"
   ).length;
