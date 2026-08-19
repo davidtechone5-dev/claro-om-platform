@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { DonutChart, DualLineChart } from "../components/Charts";
 import { EngineersOverview } from "./EngineersOverview";
@@ -13,10 +14,19 @@ import {
   AlertCircle,
   UserPlus,
   TrendingUp,
-  Search
+  Search,
+  Activity,
+  Cpu,
+  Layers,
+  GitCommit,
+  Smartphone,
+  ShieldAlert,
+  HelpCircle,
+  Filter
 } from "lucide-react";
 
 export function Dashboard({ user: userProp }: { user?: any }) {
+  const navigate = useNavigate();
   const user = userProp || (() => {
     try {
       const saved = localStorage.getItem("claro_user");
@@ -35,13 +45,66 @@ export function Dashboard({ user: userProp }: { user?: any }) {
   const [slaPriorityFilter, setSlaPriorityFilter] = useState<string>("ALL");
   const [slaPage, setSlaPage] = useState(1);
 
+  // Issue Separation Sub-Tab filters
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [issueSearch, setIssueSearch] = useState<string>("");
+
   // Reset pagination on filter change
   useEffect(() => {
     setSlaPage(1);
-  }, [selectedState, selectedEngineer, slaPriorityFilter]);
+  }, [selectedState, selectedEngineer, slaPriorityFilter, selectedCategory, issueSearch]);
 
   // Active Sub-Tab: "overview", "engineers", "live_issues", "legacy"
   const [activeTab, setActiveTab] = useState<"overview" | "engineers" | "live_issues" | "legacy">("overview");
+
+  // Categorize issue by keywords in complaintType and description
+  const getIssueCategory = (complaintType: string = "", description: string = "") => {
+    const typeStr = (complaintType || "").toLowerCase();
+    const descStr = (description || "").toLowerCase();
+    const fullText = `${typeStr} ${descStr}`;
+
+    if (fullText.includes("theft") || fullText.includes("thefted") || fullText.includes("stolen") || fullText.includes("insurance")) {
+      return "Theft & Insurance";
+    }
+    if (fullText.includes("panel") || fullText.includes("structure") || fullText.includes("module")) {
+      return "Panel & Structure";
+    }
+    if (fullText.includes("pump") || fullText.includes("motor") || fullText.includes("discharge") || fullText.includes("flow") || fullText.includes("water") || fullText.includes("dry run")) {
+      return "Pump & Motor";
+    }
+    if (fullText.includes("controller") || fullText.includes("starter") || fullText.includes("pcb") || fullText.includes("mcb") || fullText.includes("switch") || fullText.includes("power card") || fullText.includes("burnt") || fullText.includes("fuse") || fullText.includes("circuit")) {
+      return "Controller & Electrical";
+    }
+    if (fullText.includes("wire") || fullText.includes("wiring") || fullText.includes("cable") || fullText.includes("connector") || fullText.includes("mc4") || fullText.includes("wring") || fullText.includes("pins")) {
+      return "Wiring & Cable";
+    }
+    if (fullText.includes("mobile") || fullText.includes("rms") || fullText.includes("display") || fullText.includes("signal") || fullText.includes("app") || fullText.includes("operating")) {
+      return "RMS & Mobile App";
+    }
+    return "Other / General";
+  };
+
+  const categoriesList = [
+    { id: "Pump & Motor", label: "Pump & Motor", color: "#EF4444", icon: "Activity" },
+    { id: "Controller & Electrical", label: "Controller & Electrical", color: "#F59E0B", icon: "Cpu" },
+    { id: "Panel & Structure", label: "Panel & Structure", color: "#10B981", icon: "Layers" },
+    { id: "Wiring & Cable", label: "Wiring & Cable", color: "#3B82F6", icon: "GitCommit" },
+    { id: "RMS & Mobile App", label: "RMS & Mobile App", color: "#8B5CF6", icon: "Smartphone" },
+    { id: "Theft & Insurance", label: "Theft & Insurance", color: "#DC2626", icon: "ShieldAlert" },
+    { id: "Other / General", label: "Other / General", color: "#64748B", icon: "HelpCircle" }
+  ];
+
+  const renderCategoryIcon = (iconName: string, size = 18, color = "currentColor") => {
+    switch (iconName) {
+      case "Activity": return <Activity size={size} color={color} />;
+      case "Cpu": return <Cpu size={size} color={color} />;
+      case "Layers": return <Layers size={size} color={color} />;
+      case "GitCommit": return <GitCommit size={size} color={color} />;
+      case "Smartphone": return <Smartphone size={size} color={color} />;
+      case "ShieldAlert": return <ShieldAlert size={size} color={color} />;
+      default: return <HelpCircle size={size} color={color} />;
+    }
+  };
 
   const isEngineer = user?.role === "Engineer";
 
@@ -105,6 +168,24 @@ export function Dashboard({ user: userProp }: { user?: any }) {
 
   const openTickets = filteredTickets.filter(t => t && t.status !== "RESOLVED" && t.status !== "VERIFIED" && t.status !== "OUT_OF_SCOPE");
   const pendingCount = openTickets.length;
+
+  // Categorize active unresolved tickets
+  const activeUnresolvedTickets = openTickets.map(t => ({
+    ...t,
+    category: getIssueCategory(t.complaint?.complaintType, t.complaint?.description)
+  }));
+
+  // Categorize all tickets for backlog visualization
+  const categorizedAllTickets = filteredTickets.map(t => ({
+    ...t,
+    category: getIssueCategory(t.complaint?.complaintType, t.complaint?.description),
+    isResolved: t.status === "RESOLVED" || t.status === "VERIFIED" || t.status === "OUT_OF_SCOPE"
+  }));
+
+  const categoryCounts = categoriesList.reduce((acc, cat) => {
+    acc[cat.id] = activeUnresolvedTickets.filter(t => t.category === cat.id).length;
+    return acc;
+  }, {} as Record<string, number>);
 
 
   const onHoldCount = filteredTickets.filter(t => t.status === "ON_HOLD").length;
@@ -696,7 +777,25 @@ export function Dashboard({ user: userProp }: { user?: any }) {
       {activeTab === "live_issues" && (() => {
         const slaTickets = openTickets.filter(t => {
           const p = t?.priority || "STANDARD";
-          return slaPriorityFilter === "ALL" || p === slaPriorityFilter;
+          const priorityMatch = slaPriorityFilter === "ALL" || p === slaPriorityFilter;
+          const categoryMatch = selectedCategory === "ALL" || getIssueCategory(t.complaint?.complaintType, t.complaint?.description) === selectedCategory;
+
+          const searchStr = issueSearch.toLowerCase().trim();
+          if (!searchStr) return priorityMatch && categoryMatch;
+
+          const ticketNum = (t.ticketNumber || "").toLowerCase();
+          const complainant = (t.complaint?.complainantName || "").toLowerCase();
+          const appId = (t.complaint?.applicationId || "").toLowerCase();
+          const rawType = (t.complaint?.complaintType || "").toLowerCase();
+          const desc = (t.complaint?.description || "").toLowerCase();
+
+          const searchMatch = ticketNum.includes(searchStr) ||
+            complainant.includes(searchStr) ||
+            appId.includes(searchStr) ||
+            rawType.includes(searchStr) ||
+            desc.includes(searchStr);
+
+          return priorityMatch && categoryMatch && searchMatch;
         });
 
         const localWithin = slaTickets.filter(t => getDaysOpen(t?.createdAt) < 3).length;
@@ -738,14 +837,29 @@ export function Dashboard({ user: userProp }: { user?: any }) {
           return pages;
         };
 
+        // Geographic hotspot counts for the selected category
+        const geoCounts: Record<string, number> = {};
+        slaTickets.forEach(t => {
+          const state = t.complaint?.masterInstallation?.state?.name || "Unknown State";
+          geoCounts[state] = (geoCounts[state] || 0) + 1;
+        });
+        const geoDistributionList = Object.entries(geoCounts)
+          .map(([name, count]) => ({
+            name,
+            count,
+            percent: slaTickets.length > 0 ? Math.round((count / slaTickets.length) * 100) : 0
+          }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
+
         return (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "1rem" }}>
             <div className="panel-card" style={styles.cardPadding}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
                 <div>
                   <h3 style={styles.sectionTitle}>Live Unresolved Issues & SLA Tracking</h3>
                   <p style={{ color: "#64748B", fontSize: "0.82rem", margin: "0.25rem 0 0 0" }}>
-                    Real-time queue of active tickets requiring immediate SLA attention and engineer tracking.
+                    Real-time queue of active tickets requiring immediate SLA attention, categorization tracking, and engineer dispatch.
                   </p>
                 </div>
 
@@ -766,7 +880,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
                   </div>
 
                   <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "#DC2626", backgroundColor: "#FEF2F2", padding: "0.3rem 0.75rem", borderRadius: "4px" }}>
-                    {totalItems} Active Unresolved Tickets
+                    {totalItems} Active Tickets
                   </span>
                 </div>
               </div>
@@ -790,14 +904,184 @@ export function Dashboard({ user: userProp }: { user?: any }) {
               </div>
             </div>
 
+            {/* Category Filter Cards Grid (Subtle Slate Theme) */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem" }}>
+              {/* Summary Card for ALL */}
+              <div
+                onClick={() => setSelectedCategory("ALL")}
+                style={{
+                  ...styles.kpiCardItem,
+                  cursor: "pointer",
+                  backgroundColor: selectedCategory === "ALL" ? "#F1F5F9" : "#FFFFFF",
+                  border: `1px solid ${selectedCategory === "ALL" ? "#475569" : "#E2E8F0"}`,
+                  borderRadius: "10px",
+                  boxShadow: selectedCategory === "ALL" ? "var(--card-shadow-hover)" : "var(--card-shadow)",
+                  transform: selectedCategory === "ALL" ? "translateY(-1px)" : "none",
+                  transition: "all 0.15s ease"
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: "100%" }}>
+                  <div style={styles.kpiCardLabel}>ALL CATEGORIES</div>
+                  <div style={{ padding: "0.25rem", borderRadius: "4px", backgroundColor: selectedCategory === "ALL" ? "#E2E8F0" : "#F1F5F9", display: "flex", justifyContent: "center", alignItems: "center" }}>
+                    <Filter size={15} color="#475569" />
+                  </div>
+                </div>
+                <div style={{ ...styles.kpiCardVal, color: "#0F172A", marginTop: "0.4rem", fontSize: "1.4rem" }}>
+                  {openTickets.length}
+                </div>
+                <div style={{ ...styles.kpiCardSub, color: "#64748B", fontWeight: "700", fontSize: "0.68rem" }}>
+                  Total Backlog
+                </div>
+              </div>
+
+              {/* Category Cards */}
+              {categoriesList.map(cat => {
+                const count = categoryCounts[cat.id] || 0;
+                const percent = openTickets.length > 0 ? Math.round((count / openTickets.length) * 100) : 0;
+                const isSelected = selectedCategory === cat.id;
+
+                return (
+                  <div
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    style={{
+                      ...styles.kpiCardItem,
+                      cursor: "pointer",
+                      backgroundColor: isSelected ? `${cat.color}0A` : "#FFFFFF",
+                      border: `1px solid ${isSelected ? cat.color : "#E2E8F0"}`,
+                      borderRadius: "10px",
+                      boxShadow: isSelected ? `0 4px 12px -2px ${cat.color}25` : "var(--card-shadow)",
+                      transform: isSelected ? "translateY(-1px)" : "none",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: "100%" }}>
+                      <div style={{ ...styles.kpiCardLabel, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", maxWidth: "80%" }}>
+                        {cat.label}
+                      </div>
+                      <div style={{ padding: "0.25rem", borderRadius: "4px", backgroundColor: `${cat.color}18`, display: "flex", justifyContent: "center", alignItems: "center" }}>
+                        {renderCategoryIcon(cat.icon, 15, cat.color)}
+                      </div>
+                    </div>
+                    <div style={{ ...styles.kpiCardVal, color: "#0F172A", marginTop: "0.4rem", fontSize: "1.4rem" }}>
+                      {count}
+                    </div>
+                    <div style={{ ...styles.kpiCardSub, color: isSelected ? cat.color : "#64748B", fontWeight: "700", fontSize: "0.68rem" }}>
+                      {percent}% of active
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Visual Statistics & Hotspots Panels Row (Monochrome Professional Theme) */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1.25rem" }}>
+              
+              {/* Donut Chart breakdown */}
+              <div className="panel-card" style={styles.cardPadding}>
+                <h3 style={styles.sectionTitle}>ACTIVE BACKLOG BY CATEGORY</h3>
+                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "170px", marginTop: "0.75rem" }}>
+                  <DonutChart data={categoriesList.map(cat => ({
+                    name: cat.label,
+                    value: categoryCounts[cat.id] || 0,
+                    color: cat.color
+                  })).filter(d => d.value > 0)} centerVal={openTickets.length} centerLabel="ACTIVE" size={140} />
+                </div>
+              </div>
+
+              {/* Resolution Backlog Performance comparison */}
+              <div className="panel-card" style={styles.cardPadding}>
+                <h3 style={styles.sectionTitle}>BACKLOG VS RESOLVED</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem", marginTop: "0.75rem" }}>
+                  {categoriesList.slice(0, 5).map(cat => {
+                    const active = categorizedAllTickets.filter(t => t.category === cat.id && !t.isResolved).length;
+                    const resolved = categorizedAllTickets.filter(t => t.category === cat.id && t.isResolved).length;
+                    const totalCat = active + resolved;
+                    const resolutionRate = totalCat > 0 ? Math.round((resolved / totalCat) * 100) : 0;
+                    
+                    return (
+                      <div key={cat.id} style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", fontWeight: "700" }}>
+                          <span style={{ color: "#334155" }}>{cat.label}</span>
+                          <span style={{ color: "#10B981" }}>{resolutionRate}% Resolved</span>
+                        </div>
+                        <div style={{ height: "6px", backgroundColor: "#E2E8F0", borderRadius: "3px", overflow: "hidden" }}>
+                          <div style={{ width: `${resolutionRate}%`, height: "100%", backgroundColor: "#10B981" }} title={`Resolved: ${resolved}`} />
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.58rem", color: "#64748B" }}>
+                          <span>{resolved} Resolved</span>
+                          <span style={{ color: active > 0 ? "#EF4444" : "#64748B", fontWeight: active > 0 ? "700" : "400" }}>{active} Active</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Geographic Hotspots for the category */}
+              <div className="panel-card" style={styles.cardPadding}>
+                <h3 style={styles.sectionTitle}>
+                  {selectedCategory === "ALL" ? "ALL ISSUES HOTSPOTS" : `${selectedCategory.toUpperCase()} HOTSPOTS`}
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem", marginTop: "0.75rem" }}>
+                  {geoDistributionList.length === 0 ? (
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "150px", color: "#94a3b8", fontSize: "0.75rem" }}>
+                      No Geographic Data Available
+                    </div>
+                  ) : (
+                    geoDistributionList.map((state, idx) => (
+                      <div key={state.name} style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", fontWeight: "600" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: "0.25rem", color: "#1E293B" }}>
+                            <span style={{ color: "#94A3B8" }}>#{idx + 1}</span> {state.name}
+                          </span>
+                          <span style={{ fontWeight: "800" }}>{state.count} ({state.percent}%)</span>
+                        </div>
+                        <div style={{ height: "4px", backgroundColor: "#F1F5F9", borderRadius: "2px", overflow: "hidden" }}>
+                          <div style={{ width: `${state.percent}%`, height: "100%", backgroundColor: selectedCategory === "ALL" ? "#3B82F6" : categoriesList.find(c => c.id === selectedCategory)?.color || "#3B82F6" }} />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+            </div>
+
             {/* Live Unresolved Queue Table */}
             <div className="panel-card" style={styles.cardPadding}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                <h4 style={{ margin: 0, fontSize: "0.88rem", fontWeight: "800", color: "#0F172A" }}>
-                  ACTIVE UNRESOLVED QUEUE
-                </h4>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "600" }}>
-                  Showing {totalItems > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + PAGE_SIZE, totalItems)} of {totalItems} tickets
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "1rem" }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: "0.88rem", fontWeight: "800", color: "#0F172A" }}>
+                    {selectedCategory === "ALL" ? "ACTIVE UNRESOLVED QUEUE" : `ACTIVE QUEUE: ${selectedCategory.toUpperCase()}`}
+                  </h4>
+                  <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "600" }}>
+                    Showing {totalItems > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + PAGE_SIZE, totalItems)} of {totalItems} tickets
+                  </div>
+                </div>
+
+                {/* Queue Search Control */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                    <Search size={14} style={{ position: "absolute", left: "10px", color: "#94A3B8" }} />
+                    <input
+                      type="text"
+                      placeholder="Search active queue..."
+                      value={issueSearch}
+                      onChange={(e) => setIssueSearch(e.target.value)}
+                      className="form-input"
+                      style={{ paddingLeft: "30px", fontSize: "0.78rem", height: "32px", width: "220px" }}
+                    />
+                  </div>
+                  {selectedCategory !== "ALL" && (
+                    <button
+                      onClick={() => setSelectedCategory("ALL")}
+                      className="btn-secondary"
+                      style={{ padding: "0.25rem 0.55rem", fontSize: "0.75rem", height: "32px" }}
+                    >
+                      Clear Filter
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -808,7 +1092,9 @@ export function Dashboard({ user: userProp }: { user?: any }) {
                       <th style={{ textAlign: "center", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800", width: "50px" }}>S.No.</th>
                       <th style={{ textAlign: "left", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800" }}>TICKET NUMBER</th>
                       <th style={{ textAlign: "left", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800" }}>APPLICATION ID</th>
+                      <th style={{ textAlign: "left", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800" }}>CUSTOMER</th>
                       <th style={{ textAlign: "left", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800" }}>LOCATION</th>
+                      <th style={{ textAlign: "left", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800" }}>RAW COMPLAINT TYPE</th>
                       <th style={{ textAlign: "center", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800" }}>PRIORITY</th>
                       <th style={{ textAlign: "center", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800" }}>CURRENT STAGE</th>
                       <th style={{ textAlign: "center", padding: "0.6rem 0.6rem", fontSize: "0.7rem", fontWeight: "800" }}>DAYS OPEN</th>
@@ -817,56 +1103,82 @@ export function Dashboard({ user: userProp }: { user?: any }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedTickets.map((t, idx) => {
-                      if (!t) return null;
-                      const daysOpen = getDaysOpen(t.createdAt);
-                      const slaBadge = daysOpen > 7
-                        ? { label: "BREACHED", color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" }
-                        : daysOpen >= 3
-                          ? { label: "NEARING SLA", color: "#D97706", bg: "#FFFBEB", border: "#FDE68A" }
-                          : { label: "WITHIN SLA", color: "#059669", bg: "#ECFDF5", border: "#A7F3D0" };
+                    {paginatedTickets.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} style={{ textAlign: "center", padding: "3rem", color: "#64748B", fontSize: "0.82rem", fontWeight: "600" }}>
+                          No active tickets found matching current selection.
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedTickets.map((t, idx) => {
+                        if (!t) return null;
+                        const daysOpen = getDaysOpen(t.createdAt);
+                        const slaBadge = daysOpen > 7
+                          ? { label: "BREACHED", color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" }
+                          : daysOpen >= 3
+                            ? { label: "NEARING SLA", color: "#D97706", bg: "#FFFBEB", border: "#FDE68A" }
+                            : { label: "WITHIN SLA", color: "#059669", bg: "#ECFDF5", border: "#A7F3D0" };
 
-                      const assignedEng = t.assignments?.[0]?.engineer?.name || "UNASSIGNED";
-                      const loc = t.complaint?.masterInstallation
-                        ? `${t.complaint.masterInstallation.district?.name || ""}, ${t.complaint.masterInstallation.state?.name || ""}`
-                        : "N/A";
+                        const assignedEng = t.assignments?.[0]?.engineer?.name || "UNASSIGNED";
+                        const loc = t.complaint?.masterInstallation
+                          ? `${t.complaint.masterInstallation.district?.name || ""}, ${t.complaint.masterInstallation.state?.name || ""}`
+                          : "N/A";
 
-                      const statusStr = (t.status || "RECEIVED").replace(/_/g, " ");
-                      const priorityStr = t.priority || "STANDARD";
-                      const ticketNum = t.ticketNumber || `TKT-${idx + 1}`;
+                        const statusStr = (t.status || "RECEIVED").replace(/_/g, " ");
+                        const priorityStr = t.priority || "STANDARD";
+                        const ticketNum = t.ticketNumber || `TKT-${idx + 1}`;
+                        const rawType = t.complaint?.complaintType || "General";
 
-                      return (
-                        <tr key={t.id || idx} style={{ borderBottom: "1px solid #F1F5F9", backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#F8FAFC" }}>
-                          <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", fontWeight: "700", color: "#64748b", whiteSpace: "nowrap" }}>{startIndex + idx + 1}</td>
-                          <td style={{ padding: "0.55rem 0.6rem", fontWeight: "700", color: "#0F172A", fontFamily: "monospace", whiteSpace: "nowrap" }}>{ticketNum}</td>
-                          <td style={{ padding: "0.55rem 0.6rem", fontFamily: "monospace", color: "#64748B", whiteSpace: "nowrap" }}>{t.complaint?.applicationId || "N/A"}</td>
-                          <td style={{ padding: "0.55rem 0.6rem", color: "#334155", whiteSpace: "nowrap" }}>{loc}</td>
-                          <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", whiteSpace: "nowrap" }}>
-                            <span style={{
-                              fontSize: "0.68rem",
-                              fontWeight: "800",
-                              color: priorityStr === "CRITICAL" ? "#DC2626" : priorityStr === "URGENT" ? "#D97706" : "#2563EB"
-                            }}>
-                              {priorityStr}
-                            </span>
-                          </td>
-                          <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", fontWeight: "600", color: "#475569", whiteSpace: "nowrap" }}>
-                            {statusStr}
-                          </td>
-                          <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", fontWeight: "800", color: daysOpen > 7 ? "#DC2626" : "#0F172A", whiteSpace: "nowrap" }}>
-                            {daysOpen}d
-                          </td>
-                          <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", whiteSpace: "nowrap" }}>
-                            <span style={{ fontSize: "0.68rem", fontWeight: "800", color: slaBadge.color, backgroundColor: slaBadge.bg, border: `1px solid ${slaBadge.border}`, padding: "0.15rem 0.45rem", borderRadius: "3px", whiteSpace: "nowrap" }}>
-                              {slaBadge.label}
-                            </span>
-                          </td>
-                          <td style={{ padding: "0.55rem 0.6rem", fontWeight: "600", color: assignedEng === "UNASSIGNED" ? "#DC2626" : "#0F172A", whiteSpace: "nowrap" }}>
-                            {assignedEng}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                        return (
+                          <tr
+                            key={t.id || idx}
+                            onClick={() => navigate(`/tickets/${t.id}`, { state: { ticket: t } })}
+                            style={{
+                              borderBottom: "1px solid #F1F5F9",
+                              backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#F8FAFC",
+                              cursor: "pointer",
+                              transition: "background-color 0.15s ease"
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FEF2F2"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = idx % 2 === 0 ? "#FFFFFF" : "#F8FAFC"; }}
+                          >
+                            <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", fontWeight: "700", color: "#64748b", whiteSpace: "nowrap" }}>{startIndex + idx + 1}</td>
+                            <td style={{ padding: "0.55rem 0.6rem", fontWeight: "700", color: "#0F172A", fontFamily: "monospace", whiteSpace: "nowrap" }}>{ticketNum}</td>
+                            <td style={{ padding: "0.55rem 0.6rem", fontFamily: "monospace", color: "#64748B", whiteSpace: "nowrap" }}>{t.complaint?.applicationId || "N/A"}</td>
+                            <td style={{ padding: "0.55rem 0.6rem", fontWeight: "600", whiteSpace: "nowrap" }}>{t.complaint?.complainantName || "Unknown"}</td>
+                            <td style={{ padding: "0.55rem 0.6rem", color: "#334155", whiteSpace: "nowrap" }}>{loc}</td>
+                            <td style={{ padding: "0.55rem 0.6rem", whiteSpace: "nowrap" }}>
+                              <span style={{ fontSize: "0.72rem", color: "#0f172a", backgroundColor: "#f1f5f9", padding: "0.15rem 0.4rem", borderRadius: "4px", border: "1px solid #e2e8f0" }}>
+                                {rawType}
+                              </span>
+                            </td>
+                            <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", whiteSpace: "nowrap" }}>
+                              <span style={{
+                                fontSize: "0.68rem",
+                                fontWeight: "800",
+                                color: priorityStr === "CRITICAL" ? "#DC2626" : priorityStr === "URGENT" ? "#D97706" : "#2563EB"
+                              }}>
+                                {priorityStr}
+                              </span>
+                            </td>
+                            <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", fontWeight: "600", color: "#475569", whiteSpace: "nowrap" }}>
+                              {statusStr}
+                            </td>
+                            <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", fontWeight: "800", color: daysOpen > 7 ? "#DC2626" : "#0F172A", whiteSpace: "nowrap" }}>
+                              {daysOpen}d
+                            </td>
+                            <td style={{ padding: "0.55rem 0.6rem", textAlign: "center", whiteSpace: "nowrap" }}>
+                              <span style={{ fontSize: "0.68rem", fontWeight: "800", color: slaBadge.color, backgroundColor: slaBadge.bg, border: `1px solid ${slaBadge.border}`, padding: "0.15rem 0.45rem", borderRadius: "3px", whiteSpace: "nowrap" }}>
+                                {slaBadge.label}
+                              </span>
+                            </td>
+                            <td style={{ padding: "0.55rem 0.6rem", fontWeight: "600", color: assignedEng === "UNASSIGNED" ? "#DC2626" : "#0F172A", whiteSpace: "nowrap" }}>
+                              {assignedEng}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -918,7 +1230,7 @@ export function Dashboard({ user: userProp }: { user?: any }) {
                             border: `1px solid ${currentPage === pageNum ? "#B91C1C" : "#CBD5E1"}`,
                             borderRadius: "4px",
                             cursor: "pointer",
-                            transition: "all 0.1s ease"
+                            transition: "all 0.15s ease"
                           }}
                         >
                           {pageNum}
@@ -949,7 +1261,6 @@ export function Dashboard({ user: userProp }: { user?: any }) {
           </div>
         );
       })()}
-
       {/* ========================================================= */}
       {/* TAB 4: LEGACY HISTORY ARCHIVE (2013 - 2026) */}
       {/* ========================================================= */}
