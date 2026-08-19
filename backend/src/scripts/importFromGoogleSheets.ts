@@ -1,8 +1,8 @@
 import dotenv from "dotenv";
 import { prisma } from "../db";
 import { parseCSV } from "../utils/csv";
-import { parseSafeDate, parseMDYDate, parseDMYDate } from "../utils/date";
-import { normalizeStatus, normalizePriority, normalizeMaterialStatus } from "../utils/status";
+import { parseSafeDate, parseMDYDate, parseDMYDate, parseSmartDate } from "../utils/date";
+import { normalizeStatus, normalizePriority, normalizeMaterialStatus, normalizeEngineerEmail } from "../utils/status";
 import { engineerService } from "../services/engineer.service";
 import { ticketService } from "../services/ticket.service";
 import { randomUUID } from "crypto";
@@ -206,6 +206,7 @@ async function run() {
       // 3. Upsert Engineer Profile
       let engineerDbId = "";
       if (engName && engEmail && engPhone) {
+        const cleanEngEmail = normalizeEngineerEmail(engEmail);
         let engProfile = await prisma.engineer.findFirst({
           where: {
             name: { equals: engName.trim(), mode: "insensitive" }
@@ -214,16 +215,16 @@ async function run() {
 
         if (!engProfile) {
           engProfile = await prisma.engineer.findUnique({
-            where: { email: engEmail }
+            where: { email: cleanEngEmail }
           });
         }
 
         if (!engProfile) {
           const user = await prisma.user.upsert({
-            where: { email: engEmail },
+            where: { email: cleanEngEmail },
             update: { fullName: engName },
             create: {
-              email: engEmail,
+              email: cleanEngEmail,
               fullName: engName,
               passwordHash: engPassword,
               roleId: engineerRole.id
@@ -234,89 +235,175 @@ async function run() {
             data: {
               userId: user.id,
               name: engName,
-              email: engEmail,
+              email: cleanEngEmail,
               phone: engPhone,
               stateId,
               districtId
             }
           });
-          processedEngineers.add(engEmail);
+          processedEngineers.add(cleanEngEmail);
           engineersCount++;
         }
         engineerDbId = engProfile.id;
       }
 
-      // 4. Create Complaint
-      const complaintDate = parseMDYDate(createdAtStr) || new Date();
-      const project = payload["Project"] || payload["project"] || "Other";
-      const complaint = await prisma.complaint.create({
-        data: {
-          applicationId: finalAppId,
-          complainantName: finalAppId === "N/A" ? "N/A" : clientName,
-          complainantPhone: clientPhone,
-          complaintType: issueType,
-          description: description,
-          submissionTimestamp: complaintDate,
-          syncStatus: "SUCCESS",
-          project,
-          metadata: payload
+      let ticket: any = await prisma.ticket.findUnique({
+        where: { ticketNumber: finalTicketId },
+        include: {
+          complaint: true,
+          assignments: { where: { deletedAt: null } },
+          initialVisits: { where: { deletedAt: null } },
+          serviceReports: { where: { deletedAt: null } }
         }
       });
 
-      // 5. Create Ticket
+      const complaintDate = parseMDYDate(createdAtStr) || new Date();
+      const project = payload["Project"] || payload["project"] || "Other";
       const normalizedStatusValue = normalizeStatus(liveStageStr) || "RECEIVED";
       const normalizedPriorityValue = normalizePriority(priorityStr) || "STANDARD";
 
-      const ticket = await prisma.ticket.create({
-        data: {
-          ticketNumber: finalTicketId,
-          complaintId: complaint.id,
-          status: normalizedStatusValue,
-          priority: normalizedPriorityValue,
-          createdAt: complaintDate,
-          dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
-          metadata: payload
+      if (!ticket) {
+        // 4. Create Complaint
+        const complaint = await prisma.complaint.create({
+          data: {
+            applicationId: finalAppId,
+            complainantName: finalAppId === "N/A" ? "N/A" : clientName,
+            complainantPhone: clientPhone,
+            complaintType: issueType,
+            description: description,
+            submissionTimestamp: complaintDate,
+            syncStatus: "SUCCESS",
+            project,
+            metadata: payload
+          }
+        });
+
+        // 5. Create Ticket
+        try {
+          ticket = await prisma.ticket.create({
+            data: {
+              ticketNumber: finalTicketId,
+              complaintId: complaint.id,
+              status: normalizedStatusValue,
+              priority: normalizedPriorityValue,
+              createdAt: complaintDate,
+              dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
+              metadata: payload
+            }
+          });
+        } catch (err: any) {
+          if (err.code === "P2002") {
+            ticket = await prisma.ticket.update({
+              where: { ticketNumber: finalTicketId },
+              data: {
+                status: normalizedStatusValue,
+                priority: normalizedPriorityValue,
+                createdAt: complaintDate,
+                dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
+                metadata: payload
+              }
+            });
+          } else {
+            throw err;
+          }
         }
-      });
-      ticketsCount++;
+        ticketsCount++;
+      } else {
+        // Update existing complaint
+        await prisma.complaint.update({
+          where: { id: ticket.complaintId },
+          data: {
+            applicationId: finalAppId,
+            complainantName: finalAppId === "N/A" ? "N/A" : clientName,
+            complainantPhone: clientPhone,
+            complaintType: issueType,
+            description: description,
+            submissionTimestamp: complaintDate,
+            project,
+            metadata: payload
+          }
+        });
+
+        // Update existing ticket
+        ticket = await prisma.ticket.update({
+          where: { id: ticket.id },
+          data: {
+            status: normalizedStatusValue,
+            priority: normalizedPriorityValue,
+            createdAt: complaintDate,
+            dueDate: new Date(complaintDate.getTime() + 72 * 60 * 60 * 1000),
+            metadata: payload
+          }
+        });
+      }
 
       // 6. Create Ticket Assignment if Engineer exists
       if (engineerDbId) {
         const assignDate = parseDMYDate(assignedAtStr) || undefined;
-        await prisma.ticketAssignment.create({
-          data: {
-            ticketId: ticket.id,
-            engineerId: engineerDbId,
-            assignedBy: adminUser.id,
-            assignedAt: assignDate
-          }
+        const existingAssignment = await prisma.ticketAssignment.findFirst({
+          where: { ticketId: ticket.id, engineerId: engineerDbId, deletedAt: null }
         });
+        if (!existingAssignment) {
+          await prisma.ticketAssignment.create({
+            data: {
+              ticketId: ticket.id,
+              engineerId: engineerDbId,
+              assignedBy: adminUser.id,
+              assignedAt: assignDate
+            }
+          });
+        } else {
+          await prisma.ticketAssignment.update({
+            where: { id: existingAssignment.id },
+            data: { assignedAt: assignDate }
+          });
+        }
       }
 
       // 7. Create Initial Visit if date exists
       if (initialVisitDateStr && engineerDbId) {
-        const visitDate = parseDMYDate(initialVisitDateStr) || complaintDate;
-        await prisma.initialVisit.create({
-          data: {
-            ticketId: ticket.id,
-            engineerId: engineerDbId,
-            visitDate: visitDate,
-            remarks: "Completed diagnostic check on pump."
-          }
+        const visitDate = parseSmartDate(initialVisitDateStr, complaintDate) || complaintDate;
+        const existingVisit = await prisma.initialVisit.findFirst({
+          where: { ticketId: ticket.id, engineerId: engineerDbId, deletedAt: null }
         });
+        if (!existingVisit) {
+          await prisma.initialVisit.create({
+            data: {
+              ticketId: ticket.id,
+              engineerId: engineerDbId,
+              visitDate: visitDate,
+              remarks: "Completed diagnostic check on pump."
+            }
+          });
+        } else {
+          await prisma.initialVisit.update({
+            where: { id: existingVisit.id },
+            data: { visitDate: visitDate }
+          });
+        }
       }
 
       // 8. Create Service Report if date exists
       if (serviceReportDateStr) {
-        const reportDate = parseDMYDate(serviceReportDateStr) || complaintDate;
-        await prisma.serviceReport.create({
-          data: {
-            ticketId: ticket.id,
-            reportDate: reportDate,
-            workDone: "Inspected wiring, diagnosed fault and restored system operation.",
-            status: "COMPLETED"
-          }
+        const reportDate = parseSmartDate(serviceReportDateStr, complaintDate) || complaintDate;
+        const existingReport = await prisma.serviceReport.findFirst({
+          where: { ticketId: ticket.id, deletedAt: null }
         });
+        if (!existingReport) {
+          await prisma.serviceReport.create({
+            data: {
+              ticketId: ticket.id,
+              reportDate: reportDate,
+              workDone: "Inspected wiring, diagnosed fault and restored system operation.",
+              status: "COMPLETED"
+            }
+          });
+        } else {
+          await prisma.serviceReport.update({
+            where: { id: existingReport.id },
+            data: { reportDate: reportDate }
+          });
+        }
       }
 
 

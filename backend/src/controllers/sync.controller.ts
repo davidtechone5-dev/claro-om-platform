@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { prisma } from "../db.js";
-import { parseSafeDate } from "../utils/date.js";
+import { parseSafeDate, parseMDYDate } from "../utils/date.js";
 import { normalizeStatus, normalizePriority, normalizeMaterialStatus } from "../utils/status.js";
 import { engineerService } from "../services/engineer.service.js";
 import { ticketService } from "../services/ticket.service.js";
@@ -80,7 +80,7 @@ export const syncController = {
               complainantPhone,
               complaintType,
               description,
-              submissionTimestamp: parseSafeDate(timestampStr) || new Date(),
+              submissionTimestamp: parseMDYDate(timestampStr) || new Date(),
               project,
               metadata: payload
             }
@@ -123,8 +123,8 @@ export const syncController = {
             }
           }
 
-          const visitDate = parseSafeDate(initialVisitDateStr);
-          const reportDate = parseSafeDate(serviceReportDateStr);
+          const visitDate = parseMDYDate(initialVisitDateStr);
+          const reportDate = parseMDYDate(serviceReportDateStr);
           let resolvedStatus = ticket.status;
 
           const mappedStage = normalizeStatus(liveStageFromPayload);
@@ -179,7 +179,7 @@ export const syncController = {
             complainantPhone,
             complaintType,
             description,
-            submissionTimestamp: parseSafeDate(timestampStr) || new Date(),
+            submissionTimestamp: parseMDYDate(timestampStr) || new Date(),
             syncStatus: "SYNCED",
             project,
             metadata: payload
@@ -278,7 +278,7 @@ export const syncController = {
           throw new Error(`No engineer is currently assigned to Ticket ${ticketNumber}.`);
         }
 
-        const visitDate = parseSafeDate(timestampStr) || new Date();
+        const visitDate = parseMDYDate(timestampStr) || new Date();
         await ticketService.handleInitialVisit(ticket.id, activeAssignment.engineerId, visitDate, visitRemarks, tx);
 
         const oldStatus = ticket.status;
@@ -527,7 +527,7 @@ export const syncController = {
           throw new Error(`Ticket ${ticketNumber} not found.`);
         }
 
-        const reportDate = parseSafeDate(timestampStr) || new Date();
+        const reportDate = parseMDYDate(timestampStr) || new Date();
         const ticketCreatedDate = new Date(ticket.createdAt);
         const diffMs = reportDate.getTime() - ticketCreatedDate.getTime();
         const tatMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));

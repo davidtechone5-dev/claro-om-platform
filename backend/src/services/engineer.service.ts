@@ -1,6 +1,7 @@
 import { prisma } from "../db.js";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { normalizeEngineerEmail } from "../utils/status.js";
 
 export const engineerService = {
   /**
@@ -20,7 +21,7 @@ export const engineerService = {
       return null;
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = normalizeEngineerEmail(email);
     const cleanName = name.trim();
     const cleanPhone = (phone || "N/A").trim();
 

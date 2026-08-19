@@ -37,3 +37,15 @@ export function normalizeMaterialStatus(statusStr: string): string {
   if (s === "PENDING" || s === "SUBMITTED") return "PENDING";
   return "PENDING"; // Default safe fallback
 }
+
+/**
+ * Normalizes engineer emails to merge duplicate engineer profiles.
+ */
+export function normalizeEngineerEmail(email: string): string {
+  const norm = email.trim().toLowerCase();
+  if (norm === "sunillingle9@gmail.com") return "sunillingle96@gmail.com";
+  if (norm === "claroankit1996@gmail.com") return "vipulpandey.india@gmail.com";
+  if (norm === "kataria.eng@gmail.com") return "kataria.sikander18@gmail.com";
+  if (norm === "rajrishu.kumar@claroenergy.in") return "shafishekh2771992@gmail.com";
+  return norm;
+}

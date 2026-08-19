@@ -229,6 +229,10 @@ export const ticketController = {
                 }
               }
             }
+          },
+          serviceReports: {
+            where: { deletedAt: null },
+            select: { reportDate: true }
           }
         },
         take: parseInt(limit.toString(), 10),
@@ -238,9 +242,19 @@ export const ticketController = {
 
       const total = await prisma.ticket.count({ where: whereClause });
 
+      const mappedTickets = tickets.map((t: any) => {
+        const reportDate = t.serviceReports?.[0]?.reportDate || null;
+        const resolvedAt = reportDate || ((t.status === "RESOLVED" || t.status === "OUT_OF_SCOPE") ? t.updatedAt : null);
+        return {
+          ...t,
+          resolvedAt,
+          serviceReportDate: reportDate
+        };
+      });
+
       return res.status(200).json({
         total,
-        tickets
+        tickets: mappedTickets
       });
     } catch (e: any) {
       console.error("List tickets error:", e);
@@ -838,31 +852,32 @@ export const ticketController = {
         const materialReqCount = targetTickets.filter(t => t.status === "MATERIAL_REQUESTED").length;
         const insuranceCount = targetTickets.filter(t => t.status === "INSURANCE_SUBMITTED").length;
         const manualAssignCount = targetTickets.filter(t => t.status === "MANUAL_ASSIGNMENT_REQUIRED").length;
-        const visitedCount = allTickets.filter((ticket) => {
-          if (!ticket.visitDate) return false;
+        let visitedCount = 0;
+        let resolvedCount = 0;
 
-          const visitDate = new Date(ticket.visitDate);
+        allTickets.forEach(t => {
+          if (Array.isArray(t.initialVisits)) {
+            t.initialVisits.forEach((v: any) => {
+              if (v.visitDate) {
+                const visitTime = new Date(v.visitDate).getTime();
+                if (visitTime >= periodStart.getTime() && visitTime <= periodEnd.getTime()) {
+                  visitedCount++;
+                }
+              }
+            });
+          }
 
-          if (Number.isNaN(visitDate.getTime())) return false;
-
-          return (
-            visitDate.getTime() >= periodStart.getTime() &&
-            visitDate.getTime() <= periodEnd.getTime()
-          );
-        }).length;
-
-        const resolvedCount = allTickets.filter((ticket) => {
-          if (!ticket.resolutionDate) return false;
-
-          const resolutionDate = new Date(ticket.resolutionDate);
-
-          if (Number.isNaN(resolutionDate.getTime())) return false;
-
-          return (
-            resolutionDate.getTime() >= periodStart.getTime() &&
-            resolutionDate.getTime() <= periodEnd.getTime()
-          );
-        }).length;
+          if (Array.isArray(t.serviceReports)) {
+            t.serviceReports.forEach((sr: any) => {
+              if (sr.reportDate && (sr.status === "COMPLETED" || sr.status === "RESOLVED")) {
+                const reportTime = new Date(sr.reportDate).getTime();
+                if (reportTime >= periodStart.getTime() && reportTime <= periodEnd.getTime()) {
+                  resolvedCount++;
+                }
+              }
+            });
+          }
+        });
 
         // Calculate average TAT for resolved tickets (preferring Google Sheet "Overall TAT (days)")
         let tatSum = 0;

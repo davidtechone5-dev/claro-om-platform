@@ -1,7 +1,7 @@
 import { prisma } from "../db.js";
 import { parseCSV } from "../utils/csv.js";
-import { parseSafeDate } from "../utils/date.js";
-import { normalizeStatus, normalizePriority } from "../utils/status.js";
+import { parseSafeDate, parseMDYDate, parseSmartDate } from "../utils/date.js";
+import { normalizeStatus, normalizePriority, normalizeEngineerEmail } from "../utils/status.js";
 import { randomUUID, createHash } from "crypto";
 
 // Mutex lock to prevent concurrent full sheet syncs
@@ -314,8 +314,8 @@ export const syncService = {
           }
         }
 
-        const installationDate = parseSafeDate(installationDateStr);
-        const complaintDate = parseSafeDate(complaintDateStr) || new Date();
+        const installationDate = parseMDYDate(installationDateStr);
+        const complaintDate = parseMDYDate(complaintDateStr) || new Date();
 
         // Queue installations to create or update
         const cleanAppId = finalAppId.toLowerCase().trim();
@@ -371,10 +371,9 @@ export const syncService = {
           rowMetadata[h] = row[i] || "";
         });
 
-        // Prepare operational engineer record in memory (no User login account created)
         let engineerDbId: string | null = null;
         if (engineerEmail && engineerEmail.trim()) {
-          const cleanEmail = engineerEmail.trim().toLowerCase();
+          const cleanEmail = normalizeEngineerEmail(engineerEmail);
           engineerDbId = engineerMap.get(cleanEmail) || null;
 
           if (!engineerDbId && assignedEngineerName) {
@@ -517,7 +516,7 @@ export const syncService = {
           // Initial visit handling & Cleared Fields handling (Skip unchanged updates)
           const currentVisit = existingTicket.initialVisits[0];
           if (initialVisitDateStr && engineerDbId) {
-            const visitDate = parseSafeDate(initialVisitDateStr) || complaintDate;
+            const visitDate = parseSmartDate(initialVisitDateStr, complaintDate) || complaintDate;
             if (!currentVisit) {
               initialVisitsToCreate.push({
                 id: randomUUID(),
@@ -545,7 +544,7 @@ export const syncService = {
           // Service report handling & Cleared Fields handling (Skip unchanged updates)
           const currentReport = existingTicket.serviceReports[0];
           if (serviceReportDateStr) {
-            const reportDate = parseSafeDate(serviceReportDateStr) || complaintDate;
+            const reportDate = parseSmartDate(serviceReportDateStr, complaintDate) || complaintDate;
             if (!currentReport) {
               serviceReportsToCreate.push({
                 id: randomUUID(),
@@ -663,7 +662,7 @@ export const syncService = {
               id: randomUUID(),
               ticketId,
               engineerId: engineerDbId,
-              visitDate: parseSafeDate(initialVisitDateStr) || complaintDate,
+              visitDate: parseSmartDate(initialVisitDateStr, complaintDate) || complaintDate,
               remarks: "Completed diagnostic check on pump."
             });
           }
@@ -672,7 +671,7 @@ export const syncService = {
             serviceReportsToCreate.push({
               id: randomUUID(),
               ticketId,
-              reportDate: parseSafeDate(serviceReportDateStr) || complaintDate,
+              reportDate: parseSmartDate(serviceReportDateStr, complaintDate) || complaintDate,
               workDone: "Inspected wiring and restored system operation.",
               status: "COMPLETED"
             });

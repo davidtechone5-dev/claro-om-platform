@@ -24,27 +24,60 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
 
+  const getTodayStr = () => {
+    return new Date().toISOString().split("T")[0];
+  };
+
+  const getDaysAgoStr = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split("T")[0];
+  };
+
   const getFilterLabel = () => {
-    if (!startDate && !endDate) return "(All Time)";
     const formatDate = (dateStr: string) => {
       if (!dateStr) return "";
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return "";
       return d.toLocaleDateString("en-US", { day: "numeric", month: "short" });
     };
-    const startStr = formatDate(startDate);
-    const endStr = formatDate(endDate);
+    const startStr = formatDate(startDate || getDaysAgoStr(7));
+    const endStr = formatDate(endDate || getTodayStr());
     if (startStr && endStr) return `(${startStr} - ${endStr})`;
     if (startStr) return `(From ${startStr})`;
     if (endStr) return `(To ${endStr})`;
     return "(Filtered)";
   };
 
+  const getDateHeaderLabel = () => {
+    const parse = (s: string) => {
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return null;
+      return {
+        day: d.getDate(),
+        month: d.toLocaleString("en-US", { month: "short" }).toUpperCase()
+      };
+    };
+    const s = parse(startDate || getDaysAgoStr(7));
+    const e = parse(endDate || getTodayStr());
+    if (s && e) {
+      if (s.month === e.month) {
+        return `${s.day}-${e.day} ${s.month}`;
+      }
+      return `${s.day} ${s.month} - ${e.day} ${e.month}`;
+    }
+    if (s) return `FROM ${s.day} ${s.month}`;
+    if (e) return `TO ${e.day} ${e.month}`;
+    return "PERIOD";
+  };
+
   const fetchReport = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.getAllEngineersPerformance(startDate || undefined, endDate || undefined);
+      const s = startDate || getDaysAgoStr(7);
+      const e = endDate || getTodayStr();
+      const res = await api.getAllEngineersPerformance(s, e);
       setData(res);
     } catch (err: any) {
       setError(err.message || "Failed to load O&M Engineer Performance report.");
@@ -610,51 +643,35 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.darkRedHeaderTr}>
+                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center", width: "40px" }}>
+                        <div>#</div>
+                      </th>
                       <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "left" }}>
-                        <div>Engineer</div>
-                        <div style={{ height: "12px" }}></div>
+                        <div>ENGINEER</div>
                       </th>
                       <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>All time Assigned</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>(All Time)</div>
+                        <div>ALL-TIME ASSIGNED</div>
                       </th>
                       <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>All time Resolved</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>(All Time)</div>
+                        <div>ALL-TIME RESOLVED</div>
                       </th>
                       <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>All Tickets</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                        <div>ASSIGNED ({getDateHeaderLabel()})</div>
                       </th>
                       <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>Assigned</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                        <div>RESOLVED ({getDateHeaderLabel()})</div>
                       </th>
                       <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>Visited</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
-                      </th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>Material Req</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
-                      </th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>Insurance</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
-                      </th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>Resolved</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
-                      </th>
-                      <th style={{ ...styles.thCell, color: "#ffffff", textAlign: "center" }}>
-                        <div>Manual Assign</div>
-                        <div style={{ fontSize: "0.68rem", fontWeight: "400", color: "#f8fafc", marginTop: "2px" }}>{getFilterLabel()}</div>
+                        <div>VISITS ({getDateHeaderLabel()})</div>
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredEngineers.map((eng: any, idx: number) => (
                       <tr key={eng.id || idx} style={{ ...styles.tableBodyTr, backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f8fafc" }}>
+                        <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "600", color: "#64748b" }}>
+                          {idx + 1}
+                        </td>
                         <td style={{ ...styles.tdCell, fontWeight: "700", textAlign: "left" }}>
                           <span onClick={() => navigate(`/engineers/${eng.id}/report?startDate=${startDate}&endDate=${endDate}`)} style={{ cursor: "pointer", color: "#2563eb" }}>
                             {eng.name}
@@ -663,26 +680,19 @@ export function EngineersOverview({ mode = "reports" }: { mode?: "reports" | "da
                         </td>
                         <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "800", color: "#475569" }}>{eng.totalAssigned || 0}</td>
                         <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "800", color: "#10b981" }}>{eng.totalResolved || 0}</td>
-                        <td style={{ ...styles.tdCell, textAlign: "center", fontWeight: "800" }}>{eng.allCount || 0}</td>
                         <td style={{ ...styles.tdCell, textAlign: "center", color: "#2563eb", fontWeight: "600" }}>{eng.assignedCount || 0}</td>
-                        <td style={{ ...styles.tdCell, textAlign: "center", color: "#0891b2", fontWeight: "600" }}>{eng.visitedCount || 0}</td>
-                        <td style={{ ...styles.tdCell, textAlign: "center", color: "#d97706", fontWeight: "600" }}>{eng.materialReqCount || 0}</td>
-                        <td style={{ ...styles.tdCell, textAlign: "center", color: "#9333ea", fontWeight: "600" }}>{eng.insuranceCount || 0}</td>
                         <td style={{ ...styles.tdCell, textAlign: "center", color: "#16a34a", fontWeight: "700" }}>{eng.resolvedCount || 0}</td>
-                        <td style={{ ...styles.tdCell, textAlign: "center", color: "#dc2626", fontWeight: "600" }}>{eng.manualAssignCount || 0}</td>
+                        <td style={{ ...styles.tdCell, textAlign: "center", color: "#0891b2", fontWeight: "600" }}>{eng.visitedCount || 0}</td>
                       </tr>
                     ))}
                     <tr style={styles.darkRedTotalTr}>
-                      <td style={{ ...styles.totalTd, textAlign: "left" }}>Total ({filteredEngineers.length} Engineers)</td>
+                      <td style={{ ...styles.totalTd, textAlign: "center" }}></td>
+                      <td style={{ ...styles.totalTd, textAlign: "left" }}>TOTAL</td>
                       <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.totalAssigned}</td>
                       <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.totalResolved}</td>
-                      <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.allCount}</td>
                       <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.assignedCount}</td>
-                      <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.visitedCount}</td>
-                      <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.materialReqCount}</td>
-                      <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.insuranceCount}</td>
                       <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.resolvedCount}</td>
-                      <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.manualAssignCount}</td>
+                      <td style={{ ...styles.totalTd, textAlign: "center" }}>{totalsFiltered.visitedCount}</td>
                     </tr>
                   </tbody>
                 </table>

@@ -90,8 +90,8 @@ export function StateReport() {
   let tatSum = 0;
   resolvedTickets.forEach(t => {
     const created = new Date(t.createdAt).getTime();
-    const updated = new Date(t.updatedAt).getTime();
-    const diffDays = (updated - created) / (1000 * 60 * 60 * 24);
+    const resolved = new Date(t.resolvedAt || t.serviceReportDate || t.updatedAt).getTime();
+    const diffDays = (resolved - created) / (1000 * 60 * 60 * 24);
     tatSum += diffDays > 0 ? diffDays : 1.5;
   });
   const avgTat = totalResolved > 0 ? parseFloat((tatSum / totalResolved).toFixed(1)) : 0;

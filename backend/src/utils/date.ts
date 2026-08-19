@@ -71,3 +71,23 @@ export function parseDMYDate(dStr?: string | null): Date | null {
 export function parseSafeDate(dStr?: string | null): Date | null {
   return parseDMYDate(dStr);
 }
+
+export function parseSmartDate(dStr?: string | null, baseDate?: Date | null): Date | null {
+  if (!dStr) return null;
+  const trimmed = dStr.trim();
+  if (!trimmed) return null;
+
+  const mdy = parseMDYDate(trimmed);
+  const dmy = parseDMYDate(trimmed);
+
+  if (!mdy) return dmy;
+  if (!dmy) return mdy;
+
+  if (mdy.getTime() === dmy.getTime()) return mdy;
+
+  const base = baseDate || new Date();
+  const mdyDiff = Math.abs(mdy.getTime() - base.getTime());
+  const dmyDiff = Math.abs(dmy.getTime() - base.getTime());
+
+  return mdyDiff < dmyDiff ? mdy : dmy;
+}
